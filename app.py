@@ -21,7 +21,16 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 def main():
     """Main application controller"""
 
-    available_modules = load_available_modules()
+    # Load available modules with debugging
+available_modules = load_available_modules()
+
+# DEBUG: Show what modules were found
+if st.sidebar.checkbox("🐛 Debug Mode", False):
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Debug Info")
+    st.sidebar.write(f"Modules found: {len(available_modules)}")
+    for name, config in available_modules.items():
+        st.sidebar.write(f"- {name}: {config.get('display_name', 'No name')}")
 
     with st.sidebar:
         st.markdown("""
