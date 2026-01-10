@@ -9,7 +9,7 @@ def render():
     st.markdown("""
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='font-size: 3rem; margin-bottom: 1rem;'>
-            🔬 ScientoMetrics
+            🔬 ScientoMETRICS
         </h1>
         <p style='font-size: 1.3rem; color: #666; margin-bottom: 2rem;'>
             Advanced Scientometric Analysis Platform
@@ -117,7 +117,7 @@ def render():
 
     with st.expander("📖 About This Platform"):
         st.markdown("""
-        **ScientoMetrics** is a comprehensive platform for scientometric analysis
+        **Scientometrics** is a comprehensive platform for scientometric analysis
         designed specifically for researchers who need rigorous, publication-ready results.
 
         **Statistical Rigor:**
@@ -128,7 +128,7 @@ def render():
 
         **Citation:**
 ```
-        Your Name. (2024). ScientoMetrics: Advanced Scientometric Analysis Platform
+        Serhat Burmaoglu. (2026). Scientometrics: Advanced Scientometric Analysis Platform
         (Version 1.0.0) [Software]. GitHub.
         https://github.com/yourusername/scientometric-analysis-platform
 ```
