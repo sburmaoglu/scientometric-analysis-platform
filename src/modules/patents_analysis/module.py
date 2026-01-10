@@ -155,38 +155,3 @@ class PatentsAnalysisModule(BaseModule):
                     st.metric("Their Share", f"{pct:.1f}%")
             else:
                 st.warning("Jurisdiction column not available")
-```
-
----
-
-## 🔧 Step-by-Step Fix:
-
-### 1. **Open the file:**
-- Navigate to `src/modules/patents_analysis/module.py`
-
-### 2. **Delete ALL content**
-- Select all (Cmd+A)
-- Delete
-
-### 3. **Copy the code above**
-- Copy the ENTIRE code block above
-
-### 4. **Paste into the file**
-- Paste (Cmd+V)
-
-### 5. **Save the file**
-- Save (Cmd+S)
-
-### 6. **Verify the file:**
-- Check that the first line is: `"""Patents Analysis Module"""`
-- Check that there's a blank line after it
-- Check that the class name is: `class PatentsAnalysisModule(BaseModule):`
-- Check that `def render(self):` exists
-
----
-
-## 🚀 Deploy:
-
-1. **Commit in GitHub Desktop:**
-```
-   Summary: Fixed Patents Analysis module implementation
