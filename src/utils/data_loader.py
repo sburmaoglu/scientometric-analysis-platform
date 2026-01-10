@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Tuple, Dict, Any
 
-def load_publications_data(file) -> pd.DataFrame:
+def load_publications_data(file):
     """
     Load publications data from lens.org format
     
@@ -80,7 +80,7 @@ def load_publications_data(file) -> pd.DataFrame:
     
     return df
 
-def load_patents_data(file) -> pd.DataFrame:
+def load_patents_data(file):
     """
     Load patents data from lens.org format
     
@@ -152,7 +152,7 @@ def load_patents_data(file) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
     
-    # Extract year from application_date if year column doesn't exist or is empty
+    # Extract year from application_date
     if 'application_date' in df.columns:
         if 'year' not in df.columns or df['year'].isna().all():
             df['year'] = df['application_date'].dt.year
@@ -166,12 +166,12 @@ def load_patents_data(file) -> pd.DataFrame:
     
     return df
 
-def validate_data(df: pd.DataFrame, required_columns: list) -> Tuple[bool, str]:
+def validate_data(df, required_columns):
     """
     Validate that dataframe contains required columns
     
     Args:
-        df: Input dataframe (already mapped)
+        df: Input dataframe
         required_columns: List of required column names
         
     Returns:
@@ -180,16 +180,16 @@ def validate_data(df: pd.DataFrame, required_columns: list) -> Tuple[bool, str]:
     if len(df) == 0:
         return False, "Data file is empty"
     
-    # Check for required columns (should be standardized names after mapping)
+    # Check for required columns
     missing_cols = [col for col in required_columns if col not in df.columns]
     
     if missing_cols:
         available = ', '.join(list(df.columns)[:10])
-        return False, f"Missing required columns: {', '.join(missing_cols)}. Available: {available}..."
+        return False, f"Missing columns: {', '.join(missing_cols)}. Available: {available}..."
     
     return True, "Data is valid"
 
-def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
+def get_data_summary(df, data_type):
     """
     Get summary statistics for the data
     
@@ -212,13 +212,12 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
             if len(years) > 0:
                 summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
         
-        # Unique authors (count semicolon-separated)
+        # Unique authors
         if 'author' in df.columns:
-            non_null_authors = df['author'].dropna()
-            if len(non_null_authors) > 0:
-                # Count total unique authors across all publications
+            non_null = df['author'].dropna()
+            if len(non_null) > 0:
                 all_authors = []
-                for authors_str in non_null_authors:
+                for authors_str in non_null:
                     if pd.notna(authors_str):
                         authors = str(authors_str).split(';')
                         all_authors.extend([a.strip() for a in authors if a.strip()])
@@ -252,23 +251,23 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
         
         # Unique inventors
         if 'inventor' in df.columns:
-            non_null_inventors = df['inventor'].dropna()
-            if len(non_null_inventors) > 0:
+            non_null = df['inventor'].dropna()
+            if len(non_null) > 0:
                 all_inventors = []
-                for inventors_str in non_null_inventors:
-                    if pd.notna(inventors_str):
-                        inventors = str(inventors_str).split(';')
+                for inv_str in non_null:
+                    if pd.notna(inv_str):
+                        inventors = str(inv_str).split(';')
                         all_inventors.extend([i.strip() for i in inventors if i.strip()])
                 summary['unique_inventors'] = len(set(all_inventors))
         
         # Unique assignees
         if 'assignee' in df.columns:
-            non_null_assignees = df['assignee'].dropna()
-            if len(non_null_assignees) > 0:
+            non_null = df['assignee'].dropna()
+            if len(non_null) > 0:
                 all_assignees = []
-                for assignees_str in non_null_assignees:
-                    if pd.notna(assignees_str):
-                        assignees = str(assignees_str).split(';')
+                for ass_str in non_null:
+                    if pd.notna(ass_str):
+                        assignees = str(ass_str).split(';')
                         all_assignees.extend([a.strip() for a in assignees if a.strip()])
                 summary['unique_assignees'] = len(set(all_assignees))
         
@@ -292,15 +291,3 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
                 summary['avg_forward_citations'] = round(float(avg), 2)
     
     return summary
-```
-
----
-
-## 🚀 Deploy These Changes:
-
-1. **Update `src/config/settings.py`** - Replace the `UPLOAD_CONFIG` section
-2. **Update `src/utils/data_loader.py`** - Replace the entire file
-3. **Commit in GitHub Desktop:**
-```
-   Summary: Support lens.org data format
-   Description: Updated column mapping for lens.org publications and patents export
