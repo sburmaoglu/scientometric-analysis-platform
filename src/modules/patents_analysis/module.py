@@ -405,5 +405,3 @@ class PatentsAnalysisModule(BaseModule):
         # Table
         with st.expander("📊 Complete Classification List"):
             st.dataframe(top_classes, use_container_width=True, hide_index=True)
-   Summary: Fully implemented Patents Analysis module
-   Description: Added 5 analysis tabs with interactive visualizations and download functionality
