@@ -112,23 +112,8 @@ UPLOAD_CONFIG = {
         "patents": [".csv", ".xlsx", ".json", ".xml"]
     },
     "required_columns": {
-        "publications": ["article title", "year"],  # Updated for your data
-        "patents": ["title", "publication date"]  # Updated for lens.org format
-    },
-    "column_mapping": {
-        "publications": {
-            "article title": "title",
-            "authors": "author",
-            "cited by": "citations",
-            "source title": "journal",
-            "author keywords": "keywords"
-        },
-        "patents": {
-            "publication date": "application_date",
-            "applicants": "assignee",
-            "inventors": "inventor",
-            "simple family size": "family_size"
-        }
+        "publications": ["title"],  # Only title is required now
+        "patents": ["title"]  # Only title is required now
     }
 }
 
