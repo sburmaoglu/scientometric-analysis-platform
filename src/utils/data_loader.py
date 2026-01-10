@@ -1,4 +1,4 @@
-"""Data Loading Utilities for Publications and Patents"""
+"""Data Loading Utilities for Publications and Patents - Lens.org Format"""
 
 import pandas as pd
 import json
@@ -7,8 +7,7 @@ from typing import Tuple, Dict, Any
 
 def load_publications_data(file) -> pd.DataFrame:
     """
-    Load publications data from various file formats
-    Handles column mapping for different data sources
+    Load publications data from lens.org format
     
     Args:
         file: Uploaded file object from Streamlit
@@ -19,61 +18,71 @@ def load_publications_data(file) -> pd.DataFrame:
     file_ext = Path(file.name).suffix.lower()
     
     if file_ext == '.csv':
-        df = pd.read_csv(file, encoding='utf-8-sig')  # Handle BOM
+        df = pd.read_csv(file, encoding='utf-8-sig')
     elif file_ext == '.xlsx':
         df = pd.read_excel(file)
     elif file_ext == '.json':
         data = json.load(file)
         df = pd.DataFrame(data)
-    elif file_ext == '.bib':
-        content = file.read().decode('utf-8')
-        df = pd.DataFrame({'title': ['BibTeX support coming soon'], 'year': [2024]})
-    elif file_ext == '.ris':
-        content = file.read().decode('utf-8')
-        df = pd.DataFrame({'title': ['RIS support coming soon'], 'year': [2024]})
     else:
         raise ValueError(f"Unsupported file format: {file_ext}")
     
-    # Standardize column names to lowercase and strip whitespace
-    df.columns = df.columns.str.lower().str.strip()
-    
-    # Column mapping for common data sources
+    # Column mapping for lens.org publications
     column_mapping = {
-        'article title': 'title',
-        'authors': 'author',
-        'cited by': 'citations',
-        'source title': 'journal',
-        'author keywords': 'keywords',
-        'affiliations': 'affiliation',
-        'publication year': 'year'
+        'Lens ID': 'lens_id',
+        'Title': 'title',
+        'Date Published': 'date_published',
+        'Publication Year': 'year',
+        'Publication Type': 'publication_type',
+        'Source Title': 'journal',
+        'ISSNs': 'issn',
+        'Publisher': 'publisher',
+        'Source Country': 'country',
+        'Author/s': 'author',
+        'Abstract': 'abstract',
+        'Volume': 'volume',
+        'Issue Number': 'issue',
+        'Start Page': 'page_start',
+        'End Page': 'page_end',
+        'Fields of Study': 'fields',
+        'Keywords': 'keywords',
+        'MeSH Terms': 'mesh_terms',
+        'Chemicals': 'chemicals',
+        'Funding': 'funding',
+        'Source URLs': 'source_urls',
+        'External URL': 'external_url',
+        'PMID': 'pmid',
+        'DOI': 'doi',
+        'Microsoft Academic ID': 'mag_id',
+        'PMCID': 'pmcid',
+        'Citing Patents Count': 'citing_patents',
+        'References': 'references',
+        'Citing Works Count': 'citations',
+        'Is Open Access': 'is_open_access',
+        'Open Access License': 'oa_license',
+        'Open Access Colour': 'oa_color'
     }
     
-    # Apply mapping only for columns that exist
-    rename_dict = {k: v for k, v in column_mapping.items() if k in df.columns}
-    if rename_dict:
-        df = df.rename(columns=rename_dict)
+    # Apply column mapping
+    df = df.rename(columns=column_mapping)
     
-    # Ensure 'title' column exists (try alternative names)
-    if 'title' not in df.columns:
-        for alt_name in ['article title', 'paper title', 'document title']:
-            if alt_name in df.columns:
-                df['title'] = df[alt_name]
-                break
-    
-    # Convert year to numeric if present
+    # Convert year to numeric
     if 'year' in df.columns:
         df['year'] = pd.to_numeric(df['year'], errors='coerce')
     
-    # Convert citations to numeric if present
+    # Convert citations to numeric
     if 'citations' in df.columns:
         df['citations'] = pd.to_numeric(df['citations'], errors='coerce')
+    
+    # Convert date_published to datetime
+    if 'date_published' in df.columns:
+        df['date_published'] = pd.to_datetime(df['date_published'], errors='coerce')
     
     return df
 
 def load_patents_data(file) -> pd.DataFrame:
     """
-    Load patents data from various file formats
-    Handles lens.org export format
+    Load patents data from lens.org format
     
     Args:
         file: Uploaded file object from Streamlit
@@ -84,55 +93,73 @@ def load_patents_data(file) -> pd.DataFrame:
     file_ext = Path(file.name).suffix.lower()
     
     if file_ext == '.csv':
-        df = pd.read_csv(file, encoding='utf-8-sig')  # Handle BOM
+        df = pd.read_csv(file, encoding='utf-8-sig')
     elif file_ext == '.xlsx':
         df = pd.read_excel(file)
     elif file_ext == '.json':
         data = json.load(file)
         df = pd.DataFrame(data)
-    elif file_ext == '.xml':
-        df = pd.DataFrame({'title': ['XML support coming soon'], 'application_date': ['2024-01-01']})
     else:
         raise ValueError(f"Unsupported file format: {file_ext}")
     
-    # Standardize column names to lowercase and strip whitespace
-    df.columns = df.columns.str.lower().str.strip()
-    
-    # Column mapping for lens.org and other patent databases
+    # Column mapping for lens.org patents
     column_mapping = {
-        'publication date': 'application_date',
-        'applicants': 'assignee',
-        'inventors': 'inventor',
-        'simple family size': 'family_size',
-        'ipc classifications': 'ipc_class',
-        'cpc classifications': 'cpc_class',
-        'patent title': 'title'
+        '#': 'index',
+        'Jurisdiction': 'jurisdiction',
+        'Kind': 'kind',
+        'Display Key': 'display_key',
+        'Lens ID': 'lens_id',
+        'Publication Date': 'publication_date',
+        'Publication Year': 'year',
+        'Application Number': 'application_number',
+        'Application Date': 'application_date',
+        'Priority Numbers': 'priority_numbers',
+        'Earliest Priority Date': 'earliest_priority_date',
+        'Title': 'title',
+        'Abstract': 'abstract',
+        'Applicants': 'assignee',
+        'Inventors': 'inventor',
+        'Owners': 'owners',
+        'URL': 'url',
+        'Document Type': 'document_type',
+        'Has Full Text': 'has_full_text',
+        'Cites Patent Count': 'backward_citations',
+        'Cited by Patent Count': 'forward_citations',
+        'Simple Family Size': 'family_size',
+        'Simple Family Members': 'family_members',
+        'Simple Family Member Jurisdictions': 'family_jurisdictions',
+        'Extended Family Size': 'extended_family_size',
+        'Extended Family Members': 'extended_family_members',
+        'Extended Family Member Jurisdictions': 'extended_family_jurisdictions',
+        'Sequence Count': 'sequence_count',
+        'CPC Classifications': 'cpc_class',
+        'IPCR Classifications': 'ipc_class',
+        'US Classifications': 'us_class',
+        'NPL Citation Count': 'npl_citation_count',
+        'NPL Resolved Citation Count': 'npl_resolved_count',
+        'NPL Resolved Lens ID(s)': 'npl_lens_ids',
+        'NPL Resolved External ID(s)': 'npl_external_ids',
+        'NPL Citations': 'npl_citations',
+        'Legal Status': 'legal_status'
     }
     
-    # Apply mapping only for columns that exist
-    rename_dict = {k: v for k, v in column_mapping.items() if k in df.columns}
-    if rename_dict:
-        df = df.rename(columns=rename_dict)
+    # Apply column mapping
+    df = df.rename(columns=column_mapping)
     
-    # Ensure 'title' column exists
-    if 'title' not in df.columns:
-        for alt_name in ['patent title', 'invention title']:
-            if alt_name in df.columns:
-                df['title'] = df[alt_name]
-                break
-    
-    # Convert date columns
-    date_columns = ['application_date', 'publication date', 'grant_date', 'priority_date', 'earliest priority date']
+    # Convert date columns to datetime
+    date_columns = ['publication_date', 'application_date', 'earliest_priority_date']
     for col in date_columns:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
     
-    # Extract year from application_date
+    # Extract year from application_date if year column doesn't exist or is empty
     if 'application_date' in df.columns:
-        df['year'] = df['application_date'].dt.year
+        if 'year' not in df.columns or df['year'].isna().all():
+            df['year'] = df['application_date'].dt.year
     
     # Convert numeric columns
-    numeric_cols = ['family_size', 'forward_citations', 'backward_citations', 'cited by patent count']
+    numeric_cols = ['year', 'family_size', 'forward_citations', 'backward_citations', 
+                    'extended_family_size', 'sequence_count', 'npl_citation_count']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -141,10 +168,10 @@ def load_patents_data(file) -> pd.DataFrame:
 
 def validate_data(df: pd.DataFrame, required_columns: list) -> Tuple[bool, str]:
     """
-    Validate that dataframe contains required columns (flexible checking)
+    Validate that dataframe contains required columns
     
     Args:
-        df: Input dataframe
+        df: Input dataframe (already mapped)
         required_columns: List of required column names
         
     Returns:
@@ -153,33 +180,12 @@ def validate_data(df: pd.DataFrame, required_columns: list) -> Tuple[bool, str]:
     if len(df) == 0:
         return False, "Data file is empty"
     
-    # After loading and mapping, we should have standardized column names
-    # So just check if these exist
-    df_columns_lower = [col.lower().strip() for col in df.columns]
-    
-    missing_cols = []
-    for req_col in required_columns:
-        req_col_lower = req_col.lower().strip()
-        
-        # Check if column exists (exact match or alternative)
-        found = False
-        if req_col_lower in df_columns_lower:
-            found = True
-        # For 'title' check alternatives
-        elif req_col_lower == 'title' and any(alt in df_columns_lower for alt in ['article title', 'patent title']):
-            found = True
-        # For 'year' check alternatives  
-        elif req_col_lower == 'year' and any(alt in df_columns_lower for alt in ['publication year']):
-            found = True
-        # For 'application_date' check alternatives
-        elif req_col_lower == 'application_date' and any(alt in df_columns_lower for alt in ['publication date']):
-            found = True
-        
-        if not found:
-            missing_cols.append(req_col)
+    # Check for required columns (should be standardized names after mapping)
+    missing_cols = [col for col in required_columns if col not in df.columns]
     
     if missing_cols:
-        return False, f"Missing required columns: {', '.join(missing_cols)}. Found columns: {', '.join(list(df.columns)[:10])}"
+        available = ', '.join(list(df.columns)[:10])
+        return False, f"Missing required columns: {', '.join(missing_cols)}. Available: {available}..."
     
     return True, "Data is valid"
 
@@ -200,14 +206,25 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
     }
     
     if data_type == 'publications':
+        # Year range
         if 'year' in df.columns:
             years = df['year'].dropna()
             if len(years) > 0:
                 summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
         
+        # Unique authors (count semicolon-separated)
         if 'author' in df.columns:
-            summary['unique_authors'] = df['author'].nunique()
+            non_null_authors = df['author'].dropna()
+            if len(non_null_authors) > 0:
+                # Count total unique authors across all publications
+                all_authors = []
+                for authors_str in non_null_authors:
+                    if pd.notna(authors_str):
+                        authors = str(authors_str).split(';')
+                        all_authors.extend([a.strip() for a in authors if a.strip()])
+                summary['unique_authors'] = len(set(all_authors))
         
+        # Citations
         if 'citations' in df.columns:
             total = df['citations'].sum()
             avg = df['citations'].mean()
@@ -216,31 +233,74 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
             if pd.notna(avg):
                 summary['avg_citations'] = round(float(avg), 2)
         
+        # Journals
         if 'journal' in df.columns:
             summary['unique_journals'] = df['journal'].nunique()
+        
+        # Open access
+        if 'is_open_access' in df.columns:
+            oa_count = (df['is_open_access'] == True).sum()
+            summary['open_access_count'] = int(oa_count)
+            summary['open_access_pct'] = round(oa_count / len(df) * 100, 1)
     
     elif data_type == 'patents':
+        # Year range
         if 'year' in df.columns:
             years = df['year'].dropna()
             if len(years) > 0:
                 summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
-        elif 'application_date' in df.columns:
-            years = df['application_date'].dt.year.dropna()
-            if len(years) > 0:
-                summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
         
+        # Unique inventors
         if 'inventor' in df.columns:
-            summary['unique_inventors'] = df['inventor'].nunique()
+            non_null_inventors = df['inventor'].dropna()
+            if len(non_null_inventors) > 0:
+                all_inventors = []
+                for inventors_str in non_null_inventors:
+                    if pd.notna(inventors_str):
+                        inventors = str(inventors_str).split(';')
+                        all_inventors.extend([i.strip() for i in inventors if i.strip()])
+                summary['unique_inventors'] = len(set(all_inventors))
         
+        # Unique assignees
         if 'assignee' in df.columns:
-            summary['unique_assignees'] = df['assignee'].nunique()
+            non_null_assignees = df['assignee'].dropna()
+            if len(non_null_assignees) > 0:
+                all_assignees = []
+                for assignees_str in non_null_assignees:
+                    if pd.notna(assignees_str):
+                        assignees = str(assignees_str).split(';')
+                        all_assignees.extend([a.strip() for a in assignees if a.strip()])
+                summary['unique_assignees'] = len(set(all_assignees))
         
+        # Family size
         if 'family_size' in df.columns:
             avg_family = df['family_size'].mean()
             if pd.notna(avg_family):
                 summary['avg_family_size'] = round(float(avg_family), 2)
         
+        # Jurisdictions
         if 'jurisdiction' in df.columns:
-            summary['jurisdictions'] = df['jurisdiction'].nunique()
+            summary['unique_jurisdictions'] = df['jurisdiction'].nunique()
+        
+        # Citations
+        if 'forward_citations' in df.columns:
+            total = df['forward_citations'].sum()
+            avg = df['forward_citations'].mean()
+            if pd.notna(total):
+                summary['total_forward_citations'] = int(total)
+            if pd.notna(avg):
+                summary['avg_forward_citations'] = round(float(avg), 2)
     
     return summary
+```
+
+---
+
+## 🚀 Deploy These Changes:
+
+1. **Update `src/config/settings.py`** - Replace the `UPLOAD_CONFIG` section
+2. **Update `src/utils/data_loader.py`** - Replace the entire file
+3. **Commit in GitHub Desktop:**
+```
+   Summary: Support lens.org data format
+   Description: Updated column mapping for lens.org publications and patents export
