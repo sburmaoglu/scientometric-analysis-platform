@@ -4,7 +4,6 @@ import pandas as pd
 import json
 from pathlib import Path
 from typing import Tuple, Dict, Any
-from config.settings import UPLOAD_CONFIG
 
 def load_publications_data(file) -> pd.DataFrame:
     """
@@ -27,25 +26,39 @@ def load_publications_data(file) -> pd.DataFrame:
         data = json.load(file)
         df = pd.DataFrame(data)
     elif file_ext == '.bib':
-        # Basic BibTeX support
         content = file.read().decode('utf-8')
         df = pd.DataFrame({'title': ['BibTeX support coming soon'], 'year': [2024]})
     elif file_ext == '.ris':
-        # Basic RIS support
         content = file.read().decode('utf-8')
         df = pd.DataFrame({'title': ['RIS support coming soon'], 'year': [2024]})
     else:
         raise ValueError(f"Unsupported file format: {file_ext}")
     
-    # Standardize column names to lowercase
+    # Standardize column names to lowercase and strip whitespace
     df.columns = df.columns.str.lower().str.strip()
     
-    # Apply column mapping if available
-    if 'column_mapping' in UPLOAD_CONFIG and 'publications' in UPLOAD_CONFIG['column_mapping']:
-        mapping = UPLOAD_CONFIG['column_mapping']['publications']
-        # Only map columns that exist in the dataframe
-        existing_mapping = {k: v for k, v in mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_mapping)
+    # Column mapping for common data sources
+    column_mapping = {
+        'article title': 'title',
+        'authors': 'author',
+        'cited by': 'citations',
+        'source title': 'journal',
+        'author keywords': 'keywords',
+        'affiliations': 'affiliation',
+        'publication year': 'year'
+    }
+    
+    # Apply mapping only for columns that exist
+    rename_dict = {k: v for k, v in column_mapping.items() if k in df.columns}
+    if rename_dict:
+        df = df.rename(columns=rename_dict)
+    
+    # Ensure 'title' column exists (try alternative names)
+    if 'title' not in df.columns:
+        for alt_name in ['article title', 'paper title', 'document title']:
+            if alt_name in df.columns:
+                df['title'] = df[alt_name]
+                break
     
     # Convert year to numeric if present
     if 'year' in df.columns:
@@ -78,33 +91,48 @@ def load_patents_data(file) -> pd.DataFrame:
         data = json.load(file)
         df = pd.DataFrame(data)
     elif file_ext == '.xml':
-        # Basic XML support
         df = pd.DataFrame({'title': ['XML support coming soon'], 'application_date': ['2024-01-01']})
     else:
         raise ValueError(f"Unsupported file format: {file_ext}")
     
-    # Standardize column names to lowercase
+    # Standardize column names to lowercase and strip whitespace
     df.columns = df.columns.str.lower().str.strip()
     
-    # Apply column mapping if available
-    if 'column_mapping' in UPLOAD_CONFIG and 'patents' in UPLOAD_CONFIG['column_mapping']:
-        mapping = UPLOAD_CONFIG['column_mapping']['patents']
-        # Only map columns that exist in the dataframe
-        existing_mapping = {k: v for k, v in mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_mapping)
+    # Column mapping for lens.org and other patent databases
+    column_mapping = {
+        'publication date': 'application_date',
+        'applicants': 'assignee',
+        'inventors': 'inventor',
+        'simple family size': 'family_size',
+        'ipc classifications': 'ipc_class',
+        'cpc classifications': 'cpc_class',
+        'patent title': 'title'
+    }
+    
+    # Apply mapping only for columns that exist
+    rename_dict = {k: v for k, v in column_mapping.items() if k in df.columns}
+    if rename_dict:
+        df = df.rename(columns=rename_dict)
+    
+    # Ensure 'title' column exists
+    if 'title' not in df.columns:
+        for alt_name in ['patent title', 'invention title']:
+            if alt_name in df.columns:
+                df['title'] = df[alt_name]
+                break
     
     # Convert date columns
-    date_columns = ['application_date', 'publication date', 'grant_date', 'priority_date']
+    date_columns = ['application_date', 'publication date', 'grant_date', 'priority_date', 'earliest priority date']
     for col in date_columns:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
     
-    # Extract year from application_date if not present
-    if 'application_date' in df.columns and 'year' not in df.columns:
+    # Extract year from application_date
+    if 'application_date' in df.columns:
         df['year'] = df['application_date'].dt.year
     
     # Convert numeric columns
-    numeric_cols = ['family_size', 'forward_citations', 'backward_citations']
+    numeric_cols = ['family_size', 'forward_citations', 'backward_citations', 'cited by patent count']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -113,7 +141,7 @@ def load_patents_data(file) -> pd.DataFrame:
 
 def validate_data(df: pd.DataFrame, required_columns: list) -> Tuple[bool, str]:
     """
-    Validate that dataframe contains required columns
+    Validate that dataframe contains required columns (flexible checking)
     
     Args:
         df: Input dataframe
@@ -122,17 +150,36 @@ def validate_data(df: pd.DataFrame, required_columns: list) -> Tuple[bool, str]:
     Returns:
         Tuple of (is_valid, message)
     """
-    # Check for required columns (case-insensitive)
-    df_columns_lower = [col.lower().strip() for col in df.columns]
-    required_lower = [col.lower().strip() for col in required_columns]
-    
-    missing_cols = [col for col in required_lower if col not in df_columns_lower]
-    
-    if missing_cols:
-        return False, f"Missing required columns: {', '.join(missing_cols)}"
-    
     if len(df) == 0:
         return False, "Data file is empty"
+    
+    # After loading and mapping, we should have standardized column names
+    # So just check if these exist
+    df_columns_lower = [col.lower().strip() for col in df.columns]
+    
+    missing_cols = []
+    for req_col in required_columns:
+        req_col_lower = req_col.lower().strip()
+        
+        # Check if column exists (exact match or alternative)
+        found = False
+        if req_col_lower in df_columns_lower:
+            found = True
+        # For 'title' check alternatives
+        elif req_col_lower == 'title' and any(alt in df_columns_lower for alt in ['article title', 'patent title']):
+            found = True
+        # For 'year' check alternatives  
+        elif req_col_lower == 'year' and any(alt in df_columns_lower for alt in ['publication year']):
+            found = True
+        # For 'application_date' check alternatives
+        elif req_col_lower == 'application_date' and any(alt in df_columns_lower for alt in ['publication date']):
+            found = True
+        
+        if not found:
+            missing_cols.append(req_col)
+    
+    if missing_cols:
+        return False, f"Missing required columns: {', '.join(missing_cols)}. Found columns: {', '.join(list(df.columns)[:10])}"
     
     return True, "Data is valid"
 
@@ -156,7 +203,7 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
         if 'year' in df.columns:
             years = df['year'].dropna()
             if len(years) > 0:
-                summary['year_range'] = f"{years.min():.0f} - {years.max():.0f}"
+                summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
         
         if 'author' in df.columns:
             summary['unique_authors'] = df['author'].nunique()
@@ -167,16 +214,20 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
             if pd.notna(total):
                 summary['total_citations'] = int(total)
             if pd.notna(avg):
-                summary['avg_citations'] = float(avg)
+                summary['avg_citations'] = round(float(avg), 2)
         
         if 'journal' in df.columns:
             summary['unique_journals'] = df['journal'].nunique()
     
     elif data_type == 'patents':
-        if 'application_date' in df.columns:
+        if 'year' in df.columns:
+            years = df['year'].dropna()
+            if len(years) > 0:
+                summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
+        elif 'application_date' in df.columns:
             years = df['application_date'].dt.year.dropna()
             if len(years) > 0:
-                summary['year_range'] = f"{years.min():.0f} - {years.max():.0f}"
+                summary['year_range'] = f"{int(years.min())} - {int(years.max())}"
         
         if 'inventor' in df.columns:
             summary['unique_inventors'] = df['inventor'].nunique()
@@ -187,7 +238,7 @@ def get_data_summary(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
         if 'family_size' in df.columns:
             avg_family = df['family_size'].mean()
             if pd.notna(avg_family):
-                summary['avg_family_size'] = float(avg_family)
+                summary['avg_family_size'] = round(float(avg_family), 2)
         
         if 'jurisdiction' in df.columns:
             summary['jurisdictions'] = df['jurisdiction'].nunique()
