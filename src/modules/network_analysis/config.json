@@ -1,9 +1,0 @@
-{
-  "module_name": "network_analysis",
-  "display_name": "Network Analysis",
-  "icon": "🕸️",
-  "enabled": true,
-  "description": "Analysis module for network analysis",
-  "requires_data": ["publications", "patents"],
-  "version": "1.0.0"
-}

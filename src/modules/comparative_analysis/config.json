@@ -1,9 +1,0 @@
-{
-  "module_name": "comparative_analysis",
-  "display_name": "Comparative Analysis",
-  "icon": "🔄",
-  "enabled": true,
-  "description": "Analysis module for comparative analysis",
-  "requires_data": ["publications", "patents"],
-  "version": "1.0.0"
-}

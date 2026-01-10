@@ -1,9 +1,0 @@
-{
-  "module_name": "topic_modeling",
-  "display_name": "Topic Modeling",
-  "icon": "🏷️",
-  "enabled": true,
-  "description": "Analysis module for topic modeling",
-  "requires_data": ["publications", "patents"],
-  "version": "1.0.0"
-}

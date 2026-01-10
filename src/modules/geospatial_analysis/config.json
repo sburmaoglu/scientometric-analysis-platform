@@ -1,9 +1,0 @@
-{
-  "module_name": "geospatial_analysis",
-  "display_name": "Geospatial Analysis",
-  "icon": "🌐",
-  "enabled": true,
-  "description": "Analysis module for geospatial analysis",
-  "requires_data": ["publications", "patents"],
-  "version": "1.0.0"
-}

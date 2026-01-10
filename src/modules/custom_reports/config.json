@@ -1,9 +1,0 @@
-{
-  "module_name": "custom_reports",
-  "display_name": "Custom Reports",
-  "icon": "📊",
-  "enabled": true,
-  "description": "Analysis module for custom reports",
-  "requires_data": ["publications", "patents"],
-  "version": "1.0.0"
-}

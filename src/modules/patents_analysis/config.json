@@ -1,9 +1,0 @@
-{
-  "module_name": "patents_analysis",
-  "display_name": "Patents Analysis",
-  "icon": "💡",
-  "enabled": true,
-  "description": "Analysis of patent data including classifications and citations",
-  "requires_data": ["patents"],
-  "version": "1.0.0"
-}
