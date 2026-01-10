@@ -1,0 +1,9 @@
+{
+  "module_name": "ai_insights",
+  "display_name": "AI Insights",
+  "icon": "🤖",
+  "enabled": true,
+  "description": "Analysis module for ai insights",
+  "requires_data": ["publications", "patents"],
+  "version": "1.0.0"
+}

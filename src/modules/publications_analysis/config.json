@@ -1,0 +1,10 @@
+{
+  "module_name": "publications_analysis",
+  "display_name": "Publications Analysis",
+  "icon": "📚",
+  "enabled": true,
+  "description": "Comprehensive analysis of publication data including citations, authors, and trends",
+  "requires_data": ["publications"],
+  "version": "1.0.0",
+  "author": "ScientoMetrics Team"
+}
