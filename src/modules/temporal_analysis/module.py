@@ -1,24 +1,25 @@
-"""TemporalAnalysis Module"""
+"""Temporal Analysis Module"""
 
 from core.base_module import BaseModule
 import streamlit as st
 
 class TemporalAnalysisModule(BaseModule):
-    """Module for temporal analysis"""
-
+    """Module for temporal trend analysis"""
+    
     def render(self):
         st.title("📈 Temporal Analysis")
-
+        st.markdown("Analyze trends and patterns over time")
+        
         if not self.check_data_availability():
             self.show_data_required_message()
             return
-
-        st.info("🚧 This module is under development. Full features coming soon!")
-
+        
+        st.info("🚧 Temporal analysis features under development")
+        
         st.markdown("""
         ### Planned Features:
-        - Advanced analysis capabilities
-        - Interactive visualizations
-        - Statistical testing
-        - Export functionality
+        - Trend forecasting
+        - Hype cycle detection
+        - Innovation wave analysis
+        - Seasonal patterns
         """)
