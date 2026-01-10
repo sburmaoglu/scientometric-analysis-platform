@@ -12,27 +12,24 @@ def render():
     st.title("📤 Data Upload & Preprocessing")
     st.markdown("Upload publications and patents data for analysis")
 
-    st.markdown("---")
+    st.markdown("""
+**Supported Formats:** CSV, Excel, JSON, BibTeX, RIS
 
-    tab1, tab2 = st.tabs(["📚 Publications", "💡 Patents"])
+**Required Fields:**
+- `Article Title` - Publication title
+- `Year` - Publication year
 
-    # PUBLICATIONS TAB
-    with tab1:
-        st.header("📚 Publications Data")
+**Optional Fields:**
+- `Authors` - Author names (semicolon separated)
+- `Abstract` - Publication abstract
+- `Author Keywords` - Keywords (semicolon separated)
+- `Cited by` - Citation count
+- `DOI` - Digital Object Identifier
+- `Source Title` - Journal/Conference name
+- `Volume`, `Issue`, `Page Start`, `Page End`
 
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            st.markdown("""
-            **Supported Formats:** CSV, Excel, JSON, BibTeX, RIS
-
-            **Required Fields:**
-            - `title` - Publication title
-            - `year` - Publication year
-
-            **Optional Fields:**
-            - `author`, `abstract`, `keywords`, `citations`, `doi`, `journal`
-            """)
+**Example Format:** Use data exported from Scopus, Web of Science, or similar databases
+""")
 
         with col2:
             if st.session_state.publications_data is not None:
@@ -73,44 +70,23 @@ def render():
                                 if 'year_range' in summary:
                                     st.metric("Years", summary['year_range'])
 
-                        st.markdown("---")
-                        st.subheader("🔧 Preprocessing")
+                        st.markdown("""
+                            **Supported Formats:** CSV, Excel, JSON, XML
 
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            opts = {
-                                'text_cleaning': st.checkbox("Text Cleaning", True),
-                                'ner': st.checkbox("Named Entity Recognition", True)
-                            }
+                            **Required Fields:**
+                            - `Title` - Patent title
+                            - `Publication Date` - Publication date
 
-                        if st.button("🚀 Start Preprocessing", type="primary"):
-                            with st.spinner("Processing..."):
-                                processed = preprocess_pipeline(df, 'publications', opts)
-                                st.session_state.processed_publications = processed
-                                st.session_state.preprocessing_done['publications'] = True
-                                st.success("✅ Preprocessing complete!")
-                    else:
-                        st.error(f"❌ {msg}")
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                            **Optional Fields:**
+                            - `Inventors` - Inventor names (semicolon separated)
+                            - `Applicants` - Applicant/assignee organizations
+                            - `Abstract` - Patent abstract
+                            - `Jurisdiction` - Patent jurisdiction (US, EP, etc.)
+                            - `Simple Family Size` - Patent family size
+                            - `IPC Classifications` - Technology classifications
 
-    # PATENTS TAB
-    with tab2:
-        st.header("💡 Patents Data")
-
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            st.markdown("""
-            **Supported Formats:** CSV, Excel, JSON, XML
-
-            **Required Fields:**
-            - `title` - Patent title
-            - `application_date` - Application date
-
-            **Optional Fields:**
-            - `inventor`, `assignee`, `abstract`, `claims`, `ipc_class`
-            """)
+                            **Example Format:** Use data exported from lens.org or similar patent databases
+                            """)
 
         with col2:
             if st.session_state.patents_data is not None:
