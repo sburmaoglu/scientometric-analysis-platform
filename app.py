@@ -56,7 +56,8 @@ def main():
                 "🏷️ Topic Modeling",
                 "🤖 AI Insights",
                 "🔗 Causal Analysis",
-                "📊 Custom Reports"
+                "📊 Custom Reports",
+                "🗺️ Technology Roadmap" 
             ],
             label_visibility="collapsed"
         )
@@ -132,6 +133,9 @@ def main():
     elif page == "📊 Custom Reports":
         from pages import custom_reports
         custom_reports.render()
+    elif page == "🗺️ Technology Roadmap":
+        from pages import technology_roadmap
+        technology_roadmap.render()
     
     # Footer
     st.markdown("---")
