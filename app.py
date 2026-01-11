@@ -54,7 +54,9 @@ def main():
                 "🗺️ Geographic Analysis",
                 "🔬 Advanced Analytics",
                 "🏷️ Topic Modeling",
-                "🤖 AI Insights"
+                "🤖 AI Insights",
+                "🔗 Causal Analysis",
+                "📊 Custom Reports"
             ],
             label_visibility="collapsed"
         )
@@ -124,6 +126,12 @@ def main():
     elif page == "🤖 AI Insights":
         from pages import ai_insights
         ai_insights.render()
+    elif page == "🔗 Causal Analysis":
+     	from pages import causal_analysis
+    	causal_analysis.render()
+    elif page == "📊 Custom Reports":
+     	from pages import custom_reports
+    	custom_reports.render()
     
     # Footer
     st.markdown("---")
