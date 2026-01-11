@@ -456,18 +456,24 @@ def render_time_lag_analysis():
             st.metric("Min Lag", f"{valid_lags.min():.1f} years")
 
 def render_link_prediction():
-    """Link prediction analysis for collaboration/citation networks"""
+    """Link prediction analysis for collaboration/citation networks and keyword co-occurrences"""
     
     st.subheader("🔗 Link Prediction Analysis")
     st.markdown("""
-    **Link Prediction** identifies potential future collaborations or citations 
-    based on network structure and patterns.
+    **Link Prediction** identifies potential future connections based on network structure.
     
-    **Methods:**
-    - Common Neighbors
-    - Preferential Attachment
-    - Adamic-Adar Index
+    **Available Networks:**
+    - **Collaboration Networks**: Author/Inventor co-authorships
+    - **Keyword Networks**: Keyword co-occurrences
+    - **Hybrid Networks**: Combined collaboration + keyword patterns
     """)
+    
+    # Network type selection
+    network_type = st.radio(
+        "Select Network Type",
+        ["👥 Collaboration Network", "🏷️ Keyword Co-occurrence Network", "🔀 Hybrid Network"],
+        horizontal=True
+    )
     
     dataset = st.radio("Select Dataset", ["Publications", "Patents"], horizontal=True)
     
@@ -477,26 +483,41 @@ def render_link_prediction():
             return
         df = st.session_state.publications_data
         entity_col = 'author'
+        keyword_col = 'keywords'
     else:
         if st.session_state.patents_data is None:
             st.warning("⚠️ Upload patents data")
             return
         df = st.session_state.patents_data
         entity_col = 'inventor'
+        keyword_col = 'ipc_class'  # or could use abstract keywords
+    
+    st.markdown("---")
+    
+    if network_type == "👥 Collaboration Network":
+        render_collaboration_network(df, entity_col, dataset)
+    
+    elif network_type == "🏷️ Keyword Co-occurrence Network":
+        render_keyword_network(df, keyword_col, dataset)
+    
+    elif network_type == "🔀 Hybrid Network":
+        render_hybrid_network(df, entity_col, keyword_col, dataset)
+
+def render_collaboration_network(df, entity_col, dataset):
+    """Collaboration network link prediction"""
+    
+    st.markdown("### 👥 Collaboration Network Analysis")
     
     if entity_col not in df.columns:
         st.warning(f"{entity_col} data not available")
         return
     
-    st.markdown("---")
+    import networkx as nx
     
     # Build collaboration network
-    st.markdown("### 🕸️ Collaboration Network Construction")
-    
     with st.spinner("Building collaboration network..."):
         G = nx.Graph()
         
-        # Add edges for co-authors/co-inventors
         for entities in df[entity_col].dropna():
             entity_list = [e.strip() for e in str(entities).split(';') if e.strip()]
             
@@ -511,7 +532,7 @@ def render_link_prediction():
     st.success(f"✅ Network built: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
     
     # Network metrics
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("Total Nodes", G.number_of_nodes())
@@ -521,7 +542,12 @@ def render_link_prediction():
     
     with col3:
         density = nx.density(G)
-        st.metric("Network Density", f"{density:.4f}")
+        st.metric("Density", f"{density:.4f}")
+    
+    with col4:
+        if len(G) > 0:
+            avg_degree = sum(dict(G.degree()).values()) / len(G)
+            st.metric("Avg Degree", f"{avg_degree:.2f}")
     
     st.markdown("---")
     
@@ -530,28 +556,392 @@ def render_link_prediction():
     
     method = st.selectbox(
         "Prediction Method",
-        ["Common Neighbors", "Adamic-Adar Index", "Preferential Attachment"]
+        ["Common Neighbors", "Jaccard Coefficient", "Adamic-Adar Index", "Preferential Attachment"]
     )
+    
+    top_n = st.slider("Number of Predictions", 10, 50, 20)
     
     with st.spinner(f"Calculating {method}..."):
         if method == "Common Neighbors":
             predictions = list(nx.common_neighbor_centrality(G))
+        elif method == "Jaccard Coefficient":
+            predictions = list(nx.jaccard_coefficient(G))
         elif method == "Adamic-Adar Index":
             predictions = list(nx.adamic_adar_index(G))
         else:  # Preferential Attachment
             predictions = list(nx.preferential_attachment(G))
         
         # Sort by score
-        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:20]
+        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:top_n]
     
     # Display predictions
     pred_df = pd.DataFrame(predictions, columns=['Entity 1', 'Entity 2', 'Score'])
+    pred_df['Score'] = pred_df['Score'].round(4)
+    
+    st.dataframe(pred_df, use_container_width=True, hide_index=True)
+    
+    # Visualization
+    st.markdown("---")
+    st.markdown("### 📊 Score Distribution")
+    
+    fig = px.histogram(
+        pred_df,
+        x='Score',
+        nbins=20,
+        title=f"Distribution of {method} Scores",
+        labels={'Score': 'Prediction Score', 'count': 'Frequency'}
+    )
+    
+    fig.update_layout(template='plotly_white', height=400)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Download predictions
+    csv = pred_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Predictions",
+        csv,
+        f"collaboration_predictions_{dataset.lower()}.csv",
+        "text/csv"
+    )
+
+def render_keyword_network(df, keyword_col, dataset):
+    """Keyword co-occurrence network link prediction"""
+    
+    st.markdown("### 🏷️ Keyword Co-occurrence Network")
+    st.markdown("""
+    Analyzes which keywords frequently appear together and predicts future keyword associations.
+    Useful for identifying emerging research themes and topic convergence.
+    """)
+    
+    # Check for keywords
+    if keyword_col not in df.columns:
+        # Try alternative keyword columns
+        alt_cols = ['keywords', 'author_keywords', 'Keywords', 'abstract']
+        keyword_col = None
+        for col in alt_cols:
+            if col in df.columns:
+                keyword_col = col
+                break
+        
+        if keyword_col is None:
+            st.warning("No keyword data available. Extracting keywords from abstracts...")
+            
+            if 'abstract' in df.columns:
+                keyword_col = 'abstract'
+                df = extract_keywords_from_text(df, 'abstract')
+                keyword_col = 'extracted_keywords'
+            else:
+                st.error("No text data available for keyword extraction")
+                return
+    
+    st.info(f"Using column: **{keyword_col}**")
+    
+    # Build keyword co-occurrence network
+    with st.spinner("Building keyword network..."):
+        import networkx as nx
+        
+        G = nx.Graph()
+        
+        # Filter parameters
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            min_cooccurrence = st.slider("Minimum Co-occurrence", 1, 10, 2,
+                                        help="Minimum times keywords must appear together")
+        
+        with col2:
+            top_keywords = st.slider("Top Keywords to Include", 50, 500, 100,
+                                    help="Focus on most frequent keywords")
+        
+        # Extract all keywords
+        all_keywords = []
+        keyword_docs = []
+        
+        for keywords_str in df[keyword_col].dropna():
+            if pd.notna(keywords_str):
+                # Split by semicolon or comma
+                keywords = re.split(r'[;,]', str(keywords_str))
+                keywords = [k.strip().lower() for k in keywords if k.strip()]
+                
+                if len(keywords) > 0:
+                    all_keywords.extend(keywords)
+                    keyword_docs.append(keywords)
+        
+        # Get top keywords
+        keyword_freq = Counter(all_keywords)
+        top_keyword_list = [k for k, _ in keyword_freq.most_common(top_keywords)]
+        
+        # Build edges between keywords that co-occur
+        for keywords in keyword_docs:
+            # Filter to top keywords
+            keywords = [k for k in keywords if k in top_keyword_list]
+            
+            # Add edges
+            for i in range(len(keywords)):
+                for j in range(i + 1, len(keywords)):
+                    if G.has_edge(keywords[i], keywords[j]):
+                        G[keywords[i]][keywords[j]]['weight'] += 1
+                    else:
+                        G.add_edge(keywords[i], keywords[j], weight=1)
+        
+        # Filter edges by minimum co-occurrence
+        edges_to_remove = [(u, v) for u, v, d in G.edges(data=True) 
+                          if d['weight'] < min_cooccurrence]
+        G.remove_edges_from(edges_to_remove)
+        
+        # Remove isolated nodes
+        G.remove_nodes_from(list(nx.isolates(G)))
+    
+    st.success(f"✅ Network built: {G.number_of_nodes()} keywords, {G.number_of_edges()} co-occurrences")
+    
+    # Network metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Unique Keywords", G.number_of_nodes())
+    
+    with col2:
+        st.metric("Co-occurrences", G.number_of_edges())
+    
+    with col3:
+        density = nx.density(G)
+        st.metric("Network Density", f"{density:.4f}")
+    
+    with col4:
+        if len(G) > 0:
+            components = nx.number_connected_components(G)
+            st.metric("Topic Clusters", components)
+    
+    st.markdown("---")
+    
+    # Most central keywords
+    st.markdown("### ⭐ Most Central Keywords")
+    
+    if len(G) > 0:
+        degree_centrality = nx.degree_centrality(G)
+        betweenness = nx.betweenness_centrality(G)
+        
+        central_keywords = pd.DataFrame([
+            {
+                'Keyword': keyword,
+                'Degree Centrality': degree_centrality[keyword],
+                'Betweenness': betweenness[keyword],
+                'Connections': G.degree(keyword)
+            }
+            for keyword in list(degree_centrality.keys())[:20]
+        ]).sort_values('Degree Centrality', ascending=False)
+        
+        st.dataframe(central_keywords, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # Link prediction for keywords
+    st.markdown("### 🔮 Predicted Future Keyword Associations")
+    
+    method = st.selectbox(
+        "Prediction Method",
+        ["Common Neighbors", "Jaccard Coefficient", "Adamic-Adar Index", "Resource Allocation"]
+    )
+    
+    top_n = st.slider("Number of Predictions", 10, 50, 20)
+    
+    with st.spinner(f"Calculating {method}..."):
+        if method == "Common Neighbors":
+            predictions = list(nx.common_neighbor_centrality(G))
+        elif method == "Jaccard Coefficient":
+            predictions = list(nx.jaccard_coefficient(G))
+        elif method == "Adamic-Adar Index":
+            predictions = list(nx.adamic_adar_index(G))
+        else:  # Resource Allocation
+            predictions = list(nx.resource_allocation_index(G))
+        
+        # Sort by score
+        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:top_n]
+    
+    # Display predictions
+    pred_df = pd.DataFrame(predictions, columns=['Keyword 1', 'Keyword 2', 'Association Score'])
+    pred_df['Association Score'] = pred_df['Association Score'].round(4)
     
     st.dataframe(pred_df, use_container_width=True, hide_index=True)
     
     st.info("""
     **Interpretation:**
-    - **Higher scores** = More likely future collaboration
-    - These predictions are based on current network structure
-    - Consider domain expertise when evaluating predictions
+    - **High scores** = Keywords likely to co-occur in future research
+    - Identifies emerging research themes and topic convergence
+    - Useful for forecasting interdisciplinary connections
     """)
+    
+    # Visualize top predictions
+    st.markdown("---")
+    st.markdown("### 📊 Top Predicted Associations")
+    
+    top_10 = pred_df.head(10).copy()
+    top_10['Pair'] = top_10['Keyword 1'] + ' ↔ ' + top_10['Keyword 2']
+    
+    fig = px.bar(
+        top_10,
+        x='Association Score',
+        y='Pair',
+        orientation='h',
+        title="Top 10 Predicted Keyword Associations",
+        color='Association Score',
+        color_continuous_scale='Viridis'
+    )
+    
+    fig.update_layout(
+        yaxis={'categoryorder': 'total ascending'},
+        template='plotly_white',
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Download predictions
+    csv = pred_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Keyword Predictions",
+        csv,
+        f"keyword_predictions_{dataset.lower()}.csv",
+        "text/csv"
+    )
+
+def render_hybrid_network(df, entity_col, keyword_col, dataset):
+    """Hybrid network combining collaboration and keyword patterns"""
+    
+    st.markdown("### 🔀 Hybrid Network Analysis")
+    st.markdown("""
+    Combines **collaboration patterns** with **keyword co-occurrences** to predict:
+    - Researchers likely to collaborate based on shared research interests
+    - Keyword associations strengthened by author collaborations
+    """)
+    
+    if entity_col not in df.columns:
+        st.warning(f"{entity_col} data not available")
+        return
+    
+    import networkx as nx
+    
+    # Build bipartite network (authors-keywords)
+    with st.spinner("Building hybrid network..."):
+        B = nx.Graph()
+        
+        # Add nodes with bipartite attribute
+        authors = set()
+        keywords = set()
+        
+        for idx, row in df.iterrows():
+            if pd.notna(row.get(entity_col)) and pd.notna(row.get(keyword_col)):
+                # Get authors
+                author_list = [a.strip() for a in str(row[entity_col]).split(';') if a.strip()]
+                
+                # Get keywords
+                keyword_list = re.split(r'[;,]', str(row[keyword_col]))
+                keyword_list = [k.strip().lower() for k in keyword_list if k.strip()]
+                
+                authors.update(author_list)
+                keywords.update(keyword_list[:5])  # Limit keywords per document
+                
+                # Add edges between authors and keywords
+                for author in author_list:
+                    for keyword in keyword_list[:5]:
+                        if B.has_edge(author, keyword):
+                            B[author][keyword]['weight'] += 1
+                        else:
+                            B.add_edge(author, keyword, weight=1)
+        
+        # Set bipartite attribute
+        B.add_nodes_from(authors, bipartite=0)
+        B.add_nodes_from(keywords, bipartite=1)
+    
+    st.success(f"✅ Hybrid network: {len(authors)} authors, {len(keywords)} keywords, {B.number_of_edges()} connections")
+    
+    # Network metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Authors", len(authors))
+    
+    with col2:
+        st.metric("Keywords", len(keywords))
+    
+    with col3:
+        st.metric("Connections", B.number_of_edges())
+    
+    st.markdown("---")
+    
+    # Project to author-author network based on shared keywords
+    st.markdown("### 👥 Author Collaboration Prediction (Based on Shared Keywords)")
+    
+    with st.spinner("Projecting to author network..."):
+        from networkx.algorithms import bipartite
+        
+        # Project onto authors
+        author_nodes = {n for n, d in B.nodes(data=True) if d.get('bipartite') == 0}
+        G_authors = bipartite.weighted_projected_graph(B, author_nodes)
+    
+    st.info(f"Projected network: {G_authors.number_of_nodes()} authors, {G_authors.number_of_edges()} potential collaborations")
+    
+    # Calculate predictions
+    method = st.selectbox(
+        "Prediction Method",
+        ["Common Neighbors", "Adamic-Adar Index", "Resource Allocation"]
+    )
+    
+    with st.spinner(f"Calculating {method}..."):
+        if method == "Common Neighbors":
+            predictions = list(nx.common_neighbor_centrality(G_authors))
+        elif method == "Adamic-Adar Index":
+            predictions = list(nx.adamic_adar_index(G_authors))
+        else:  # Resource Allocation
+            predictions = list(nx.resource_allocation_index(G_authors))
+        
+        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:20]
+    
+    # Display predictions
+    pred_df = pd.DataFrame(predictions, columns=['Author 1', 'Author 2', 'Score'])
+    pred_df['Score'] = pred_df['Score'].round(4)
+    
+    st.dataframe(pred_df, use_container_width=True, hide_index=True)
+    
+    st.success("""
+    ✅ **Hybrid Prediction Advantage:**
+    - Identifies collaborations based on **shared research interests**
+    - More accurate than structure-only predictions
+    - Reveals interdisciplinary research opportunities
+    """)
+
+def extract_keywords_from_text(df, text_col, n_keywords=5):
+    """Extract keywords from text using TF-IDF"""
+    
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    import re
+    
+    # Get texts
+    texts = df[text_col].dropna().astype(str).tolist()
+    
+    # TF-IDF
+    vectorizer = TfidfVectorizer(
+        max_features=100,
+        stop_words='english',
+        ngram_range=(1, 2),
+        min_df=2
+    )
+    
+    try:
+        tfidf_matrix = vectorizer.fit_transform(texts)
+        feature_names = vectorizer.get_feature_names_out()
+        
+        # Extract top keywords per document
+        keywords_list = []
+        for doc_idx in range(len(texts)):
+            doc_tfidf = tfidf_matrix[doc_idx].toarray()[0]
+            top_indices = doc_tfidf.argsort()[-n_keywords:][::-1]
+            keywords = [feature_names[i] for i in top_indices if doc_tfidf[i] > 0]
+            keywords_list.append('; '.join(keywords))
+        
+        df['extracted_keywords'] = keywords_list
+        
+    except:
+        df['extracted_keywords'] = ''
+    
+    return df
