@@ -133,7 +133,7 @@ def render_data_selection():
         "Select dataset for roadmap",
         options,
         index=0 if st.session_state.roadmap_config['dataset'] is None else 
-              options.index(st.session_state.roadmap_config['dataset'])
+              options.index(st.session_state.roadmap_config['dataset']) if st.session_state.roadmap_config['dataset'] in options else 0
     )
     
     # Preview data
@@ -174,7 +174,8 @@ def show_dataset_preview(df, dataset_type):
     with col2:
         if 'year' in df.columns:
             years = df['year'].dropna()
-            st.metric("Year Range", f"{int(years.min())}-{int(years.max())}")
+            if len(years) > 0:
+                st.metric("Year Range", f"{int(years.min())}-{int(years.max())}")
     
     with col3:
         citation_col = 'citations' if dataset_type == 'publications' else 'forward_citations'
@@ -222,7 +223,7 @@ def render_unit_selection():
     st.markdown("### 🎯 Available Analysis Units")
     
     unit_descriptions = {
-        'Authors': '👥 Track research evolution through author/inventor networks',
+        'Authors': '👥 Track research evolution through author networks',
         'Inventors': '👥 Track innovation through inventor networks',
         'Organizations': '🏢 Monitor institutional technology development',
         'Countries': '🌍 Analyze geographic technology leadership',
@@ -296,7 +297,7 @@ def render_pipeline_builder():
     """Step 3: Build analysis pipeline"""
     
     st.subheader("3️⃣ Analysis Pipeline Builder")
-    st.markdown("Select and configure analyses to include in your roadmap")
+    st.markdown("Select analyses to include in your roadmap")
     
     # Check prerequisites
     if st.session_state.roadmap_config['unit'] is None:
@@ -382,11 +383,11 @@ def render_pipeline_builder():
         st.metric("Total Analyses", total_selected)
     
     with col2:
-        estimated_time = total_selected * 2  # 2 seconds per analysis
+        estimated_time = total_selected * 2
         st.metric("Est. Time", f"~{estimated_time}s")
     
     with col3:
-        st.metric("Report Sections", total_selected + 2)  # +2 for intro and summary
+        st.metric("Report Sections", total_selected + 2)
     
     st.markdown("---")
     
@@ -500,41 +501,42 @@ def render_report_generator():
         # Generate report
         generate_roadmap_report()
     
-    # Display report
-    display_roadmap_report()
-    
-    st.markdown("---")
-    
-    # Action buttons
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("🔄 Regenerate", use_container_width=True):
-            st.session_state.roadmap_results = {}
-            st.rerun()
-    
-    with col2:
-        if st.button("📄 Export PDF", use_container_width=True):
-            st.info("PDF export functionality coming soon")
-    
-    with col3:
-        if st.button("📊 Export Data", use_container_width=True):
-            export_roadmap_data()
-    
-    with col4:
-        if st.button("🆕 New Roadmap", use_container_width=True):
-            # Reset everything
-            st.session_state.roadmap_step = 1
-            st.session_state.roadmap_pipeline = []
-            st.session_state.roadmap_results = {}
-            st.session_state.roadmap_config = {
-                'dataset': None,
-                'unit': None,
-                'title': 'Technology Roadmap Report',
-                'time_horizon': 'historical',
-                'style': 'academic'
-            }
-            st.rerun()
+    # Display report only if results exist
+    if st.session_state.roadmap_results:
+        display_roadmap_report()
+        
+        st.markdown("---")
+        
+        # Action buttons
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("🔄 Regenerate", use_container_width=True):
+                st.session_state.roadmap_results = {}
+                st.rerun()
+        
+        with col2:
+            if st.button("📄 Export PDF", use_container_width=True):
+                st.info("PDF export functionality coming soon")
+        
+        with col3:
+            if st.button("📊 Export Data", use_container_width=True):
+                export_roadmap_data()
+        
+        with col4:
+            if st.button("🆕 New Roadmap", use_container_width=True):
+                # Reset everything
+                st.session_state.roadmap_step = 1
+                st.session_state.roadmap_pipeline = []
+                st.session_state.roadmap_results = {}
+                st.session_state.roadmap_config = {
+                    'dataset': None,
+                    'unit': None,
+                    'title': 'Technology Roadmap Report',
+                    'time_horizon': 'historical',
+                    'style': 'academic'
+                }
+                st.rerun()
 
 def generate_roadmap_report():
     """Execute pipeline and generate report"""
@@ -550,17 +552,18 @@ def generate_roadmap_report():
     
     results = {}
     
-    # Get data - FIXED: Handle "Both" case properly
+    # Get data - Handle "Both" case properly
     dataset_choice = config['dataset']
     
     if dataset_choice == "Publications":
         df = st.session_state.publications_data
+        df_secondary = None
         dataset_type = 'publications'
     elif dataset_choice == "Patents":
         df = st.session_state.patents_data
+        df_secondary = None
         dataset_type = 'patents'
     else:  # Both (Comparative)
-        # For "Both", use publications as primary, patents as secondary
         df = st.session_state.publications_data
         df_secondary = st.session_state.patents_data
         dataset_type = 'both'
@@ -612,7 +615,6 @@ def generate_roadmap_report():
                 'status': 'error',
                 'error': str(e)
             }
-            st.error(f"Error in {module_id}: {str(e)}")
     
     progress_bar.progress(1.0)
     status_text.text("✅ Report generation complete!")
@@ -693,7 +695,7 @@ def run_temporal_trends_both(df_pubs, df_pats, config):
     # Merge on year
     yearly = pd.merge(pubs_yearly, pats_yearly, on='year', how='outer').fillna(0)
     
-    # Calculate growth metrics for both
+    # Calculate growth metrics
     pubs_growth = ((yearly['pubs_count'].iloc[-1] - yearly['pubs_count'].iloc[0]) / 
                    yearly['pubs_count'].iloc[0] * 100) if yearly['pubs_count'].iloc[0] > 0 else 0
     pats_growth = ((yearly['pats_count'].iloc[-1] - yearly['pats_count'].iloc[0]) / 
@@ -824,7 +826,6 @@ def run_impact_analysis(df, config, dataset_type):
     # Citation distribution
     fig = go.Figure()
     
-    # Remove extreme outliers for better visualization
     citations_viz = citations[citations <= citations.quantile(0.95)]
     
     fig.add_trace(go.Histogram(
@@ -857,20 +858,16 @@ def run_impact_analysis_both(df_pubs, df_pats, config):
     if df_pubs is None or df_pats is None:
         return {'status': 'error', 'error': 'Both datasets required'}
     
-    # Publications citations
     pubs_citations = df_pubs['citations'].dropna() if 'citations' in df_pubs.columns else pd.Series([])
-    
-    # Patents citations
     pats_citations = df_pats['forward_citations'].dropna() if 'forward_citations' in df_pats.columns else pd.Series([])
     
     if len(pubs_citations) == 0 and len(pats_citations) == 0:
         return {'status': 'error', 'error': 'No citation data'}
     
-    # Calculate metrics
     pubs_mean = pubs_citations.mean() if len(pubs_citations) > 0 else 0
     pats_mean = pats_citations.mean() if len(pats_citations) > 0 else 0
     
-    # Visualization - side by side histograms
+    # Visualization
     fig = make_subplots(rows=1, cols=2, subplot_titles=('Publications', 'Patents'))
     
     if len(pubs_citations) > 0:
@@ -907,7 +904,6 @@ def run_clustering_analysis(df, config, dataset_type):
     if df is None:
         return {'status': 'error', 'error': 'No data available'}
     
-    # Prepare simple features
     features = []
     feature_names = []
     
@@ -928,27 +924,22 @@ def run_clustering_analysis(df, config, dataset_type):
     
     X = np.column_stack(features)
     
-    # Sample if too large
     if len(X) > 1000:
         indices = np.random.choice(len(X), 1000, replace=False)
         X_sample = X[indices]
     else:
         X_sample = X
     
-    # Scale
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_sample)
     
-    # K-means
     n_clusters = 3
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     clusters = kmeans.fit_predict(X_scaled)
     
-    # PCA for visualization
     pca = PCA(n_components=2, random_state=42)
     X_pca = pca.fit_transform(X_scaled)
     
-    # Visualization
     fig = px.scatter(
         x=X_pca[:, 0],
         y=X_pca[:, 1],
@@ -961,7 +952,6 @@ def run_clustering_analysis(df, config, dataset_type):
     
     fig.update_layout(template='plotly_white', height=400)
     
-    # Cluster sizes
     cluster_sizes = pd.Series(clusters).value_counts().sort_index()
     
     return {
@@ -986,7 +976,6 @@ def run_geographic_evolution(df, config, dataset_type):
     if len(geo_counts) == 0:
         return {'status': 'error', 'error': 'No geographic data'}
     
-    # Visualization
     fig = px.pie(
         values=geo_counts.values,
         names=geo_counts.index,
@@ -1008,16 +997,12 @@ def run_geographic_evolution_both(df_pubs, df_pats, config):
     if df_pubs is None or df_pats is None:
         return {'status': 'error', 'error': 'Both datasets required'}
     
-    # Publications countries
     pubs_geo = df_pubs['country'].value_counts().head(10) if 'country' in df_pubs.columns else pd.Series([])
-    
-    # Patents jurisdictions
     pats_geo = df_pats['jurisdiction'].value_counts().head(10) if 'jurisdiction' in df_pats.columns else pd.Series([])
     
     if len(pubs_geo) == 0 and len(pats_geo) == 0:
         return {'status': 'error', 'error': 'No geographic data'}
     
-    # Visualization - side by side
     fig = make_subplots(
         rows=1, cols=2,
         subplot_titles=('Publications by Country', 'Patents by Jurisdiction'),
@@ -1058,7 +1043,6 @@ def run_emerging_topics(df, config, dataset_type):
     if 'year' not in df.columns:
         return {'status': 'error', 'error': 'Year data required'}
     
-    # Get recent vs older data
     recent_year = df['year'].max()
     cutoff_year = recent_year - 3
     
@@ -1066,15 +1050,13 @@ def run_emerging_topics(df, config, dataset_type):
     older_df = df[df['year'] < cutoff_year]
     
     if len(recent_df) == 0 or len(older_df) == 0:
-        return {'status': 'error', 'error': 'Insufficient temporal data for trend analysis'}
+        return {'status': 'error', 'error': 'Insufficient temporal data'}
     
-    # For keywords/IPC analysis
     keyword_col = config.get('unit_column')
     
     if keyword_col == 'document' or keyword_col not in df.columns:
-        return {'status': 'skip', 'message': 'Emerging topics requires keyword/classification data'}
+        return {'status': 'skip', 'message': 'Emerging topics requires keyword data'}
     
-    # Parse entities
     def get_entities(dataframe):
         entities = []
         for entity_str in dataframe[keyword_col].dropna():
@@ -1086,21 +1068,20 @@ def run_emerging_topics(df, config, dataset_type):
     older_entities = get_entities(older_df)
     
     if len(recent_entities) == 0:
-        return {'status': 'error', 'error': 'No entities found in recent period'}
+        return {'status': 'error', 'error': 'No entities in recent period'}
     
     recent_counts = Counter(recent_entities)
     older_counts = Counter(older_entities)
     
-    # Calculate growth rates
     emerging = []
     for entity, recent_count in recent_counts.most_common(20):
         older_count = older_counts.get(entity, 0)
         if older_count > 0:
             growth = ((recent_count - older_count) / older_count) * 100
         else:
-            growth = 1000  # New topic
+            growth = 1000
         
-        if growth > 0:  # Only include growing topics
+        if growth > 0:
             emerging.append({
                 'entity': entity,
                 'recent_count': recent_count,
@@ -1111,10 +1092,8 @@ def run_emerging_topics(df, config, dataset_type):
     if len(emerging) == 0:
         return {'status': 'error', 'error': 'No emerging topics detected'}
     
-    # Sort by growth
     emerging = sorted(emerging, key=lambda x: x['growth_rate'], reverse=True)[:10]
     
-    # Visualization
     emerging_df = pd.DataFrame(emerging)
     
     fig = px.bar(
@@ -1137,41 +1116,95 @@ def run_emerging_topics(df, config, dataset_type):
         'figure': fig
     }
 
-# Also update display_temporal_results to handle comparative case
+def display_roadmap_report():
+    """Display generated roadmap report"""
+    
+    results = st.session_state.roadmap_results
+    config = st.session_state.roadmap_config
+    
+    # Report header
+    st.markdown(f"# {config.get('title', 'Technology Roadmap Report')}")
+    
+    if config.get('subtitle'):
+        st.markdown(f"*{config.get('subtitle')}*")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**Date:** {config.get('report_date', datetime.now().strftime('%Y-%m-%d'))}")
+    with col2:
+        if config.get('author'):
+            st.markdown(f"**Author:** {config.get('author')}")
+    
+    st.markdown("---")
+    
+    # Executive summary
+    st.markdown("## 📋 Executive Summary")
+    
+    st.markdown(f"""
+    This technology roadmap analyzes **{config.get('dataset')}** data 
+    using **{config.get('unit')}** as the primary unit of analysis.
+    
+    The analysis includes **{len(results)} analytical perspectives**, providing comprehensive 
+    insights into technology evolution, patterns, and future directions.
+    """)
+    
+    st.markdown("---")
+    
+    # Display each analysis result
+    for i, (module_id, result) in enumerate(results.items(), 1):
+        if result.get('status') == 'success':
+            st.markdown(f"## {i}. {module_id.replace('_', ' ').title()}")
+            
+            if module_id == 'temporal_trends':
+                display_temporal_results(result)
+            elif module_id == 'diversity_entropy':
+                display_diversity_results(result)
+            elif module_id == 'impact_analysis':
+                display_impact_results(result)
+            elif module_id == 'clustering':
+                display_clustering_results(result)
+            elif module_id == 'geographic_evolution':
+                display_geographic_results(result)
+            elif module_id == 'emerging_topics':
+                display_emerging_results(result)
+            
+            st.markdown("---")
+        
+        elif result.get('status') == 'skip':
+            st.info(f"ℹ️ {module_id.replace('_', ' ').title()}: {result.get('message')}")
+        
+        elif result.get('status') == 'error':
+            st.error(f"❌ {module_id.replace('_', ' ').title()}: {result.get('error')}")
+    
+    # Recommendations
+    if config.get('include_recommendations'):
+        st.markdown("## 🎯 Strategic Recommendations")
+        generate_recommendations(results, config)
+
 def display_temporal_results(result):
     """Display temporal trends results"""
     
     if result.get('is_comparative'):
-        # Comparative display
         col1, col2 = st.columns(2)
-        
         with col1:
             st.metric("Publications Growth", f"{result['pubs_growth']:.1f}%")
             st.metric("Peak Year (Pubs)", f"{result['peak_year_pubs']}")
-        
         with col2:
             st.metric("Patents Growth", f"{result['pats_growth']:.1f}%")
             st.metric("Peak Year (Pats)", f"{result['peak_year_pats']}")
-    
     else:
-        # Single dataset display
         col1, col2, col3, col4 = st.columns(4)
-        
         with col1:
             st.metric("Recent Growth", f"{result['growth_rate']:.1f}%")
-        
         with col2:
             st.metric("Total Growth", f"{result['total_growth']:.1f}%")
-        
         with col3:
             st.metric("Peak Year", f"{result['peak_year']}")
-        
         with col4:
             st.metric("Peak Count", f"{result['peak_count']:,}")
     
     st.plotly_chart(result['figure'], use_container_width=True)
     
-    # Interpretation
     growth_rate = result.get('growth_rate', result.get('pubs_growth', 0))
     
     if growth_rate > 20:
@@ -1179,38 +1212,66 @@ def display_temporal_results(result):
     elif growth_rate > 5:
         st.info("📊 **Moderate growth** - Steady development")
     else:
-        st.warning("📉 **Slow/declining growth** - May indicate maturity or declining interest")
+        st.warning("📉 **Slow/declining growth** - May indicate maturity")
+
+def display_diversity_results(result):
+    """Display diversity analysis results"""
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Shannon Entropy", f"{result['entropy']:.3f}")
+    with col2:
+        st.metric("Diversity Score", f"{result['diversity_score']:.2f}")
+    with col3:
+        st.metric("Unique Entities", f"{result['unique_entities']:,}")
+    
+    st.plotly_chart(result['figure'], use_container_width=True)
+    
+    if result['diversity_score'] > 0.7:
+        st.success("🌈 **High diversity** - Field is highly distributed")
+    elif result['diversity_score'] > 0.4:
+        st.info("📊 **Moderate diversity** - Fairly distributed")
+    else:
+        st.warning("🎯 **High concentration** - Dominated by few entities")
 
 def display_impact_results(result):
     """Display impact analysis results"""
     
     if result.get('is_comparative'):
-        # Comparative display
         col1, col2 = st.columns(2)
-        
         with col1:
             st.metric("Pubs Mean Citations", f"{result['pubs_mean']:.1f}")
-        
         with col2:
             st.metric("Patents Mean Citations", f"{result['pats_mean']:.1f}")
-    
     else:
-        # Single dataset display
         col1, col2, col3, col4 = st.columns(4)
-        
         with col1:
             st.metric("Mean Citations", f"{result['mean_citations']:.1f}")
-        
         with col2:
             st.metric("Median Citations", f"{result['median_citations']:.0f}")
-        
         with col3:
             st.metric("H-Index", f"{result['h_index']}")
-        
         with col4:
-            st.metric("Highly Cited (Top 10%)", f"{result['highly_cited']}")
+            st.metric("Highly Cited", f"{result['highly_cited']}")
     
     st.plotly_chart(result['figure'], use_container_width=True)
+
+def display_clustering_results(result):
+    """Display clustering results"""
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Number of Clusters", result['n_clusters'])
+    with col2:
+        cluster_sizes = result['cluster_sizes']
+        avg_size = np.mean(list(cluster_sizes.values()))
+        st.metric("Avg Cluster Size", f"{avg_size:.0f}")
+    
+    st.plotly_chart(result['figure'], use_container_width=True)
+    
+    st.markdown("**Cluster Sizes:**")
+    for cluster_id, size in result['cluster_sizes'].items():
+        st.write(f"- Cluster {cluster_id}: {size} items")
 
 def display_geographic_results(result):
     """Display geographic results"""
@@ -1219,10 +1280,8 @@ def display_geographic_results(result):
         st.plotly_chart(result['figure'], use_container_width=True)
     else:
         col1, col2 = st.columns(2)
-        
         with col1:
             st.metric("Unique Countries", result['unique_countries'])
-        
         with col2:
             top_country = list(result['top_countries'].keys())[0]
             st.metric("Leading Country", top_country)
@@ -1235,83 +1294,71 @@ def display_emerging_results(result):
     st.plotly_chart(result['figure'], use_container_width=True)
     
     st.markdown("**Top Emerging Topics:**")
-    
     for i, topic in enumerate(result['emerging_topics'][:5], 1):
         st.write(f"{i}. **{topic['entity']}** - Growth: {topic['growth_rate']:.0f}% "
                 f"(Recent: {topic['recent_count']}, Older: {topic['older_count']})")
 
 def generate_recommendations(results, config):
-    """Generate strategic recommendations based on results"""
+    """Generate strategic recommendations"""
     
     recommendations = []
     
-    # Based on temporal trends
     if 'temporal_trends' in results:
         growth = results['temporal_trends'].get('growth_rate', 0)
         if growth > 20:
-            recommendations.append("✅ **High growth area** - Consider increased investment and resource allocation")
+            recommendations.append("✅ **High growth area** - Consider increased investment")
         elif growth < 0:
-            recommendations.append("⚠️ **Declining trend** - Reassess strategic priorities or pivot focus")
+            recommendations.append("⚠️ **Declining trend** - Reassess priorities")
     
-    # Based on diversity
     if 'diversity_entropy' in results:
         diversity = results['diversity_entropy'].get('diversity_score', 0)
         if diversity < 0.3:
-            recommendations.append("🎯 **High concentration** - Consider diversification to reduce dependency risks")
+            recommendations.append("🎯 **High concentration** - Consider diversification")
     
-    # Based on impact
     if 'impact_analysis' in results:
         h_index = results['impact_analysis'].get('h_index', 0)
         if h_index > 50:
-            recommendations.append("🌟 **High impact field** - Leverage visibility for partnerships and funding")
+            recommendations.append("🌟 **High impact field** - Leverage for partnerships")
     
-    # Based on emerging topics
     if 'emerging_topics' in results:
-        recommendations.append("🚀 **Monitor emerging topics** - Early adoption may provide competitive advantage")
+        recommendations.append("🚀 **Monitor emerging topics** - Early adoption advantage")
     
-    # Display recommendations
     for rec in recommendations:
         st.markdown(f"- {rec}")
     
     if not recommendations:
-        st.info("Continue monitoring trends and adapting strategies based on evolving patterns")
+        st.info("Continue monitoring trends and adapting strategies")
 
 def export_roadmap_data():
-    """Export roadmap data as CSV"""
+    """Export roadmap data"""
     
     results = st.session_state.roadmap_results
     
-    # Create summary dataframe
     summary_data = []
-    
     for module_id, result in results.items():
         if result.get('status') == 'success':
             summary_data.append({
                 'Analysis': module_id.replace('_', ' ').title(),
-                'Status': 'Success',
-                'Key Metrics': str(result.get('summary', 'See detailed report'))
+                'Status': 'Success'
             })
     
     summary_df = pd.DataFrame(summary_data)
-    
     csv = summary_df.to_csv(index=False).encode('utf-8')
     
     st.download_button(
         "📥 Download Summary (CSV)",
         csv,
         f"roadmap_summary_{datetime.now().strftime('%Y%m%d')}.csv",
-        "text/csv",
-        key='download-csv'
+        "text/csv"
     )
 
 def get_available_units_for_roadmap(dataset_choice):
-    """Get available units based on dataset"""
+    """Get available units"""
     
     units = {}
     
     if dataset_choice == "Publications":
         df = st.session_state.publications_data
-        
         if 'author' in df.columns:
             units['Authors'] = 'author'
         if 'country' in df.columns:
@@ -1323,7 +1370,6 @@ def get_available_units_for_roadmap(dataset_choice):
     
     elif dataset_choice == "Patents":
         df = st.session_state.patents_data
-        
         if 'inventor' in df.columns:
             units['Inventors'] = 'inventor'
         if 'assignee' in df.columns:
@@ -1334,8 +1380,7 @@ def get_available_units_for_roadmap(dataset_choice):
             units['IPC Classes'] = 'ipc_class'
         if 'cpc_class' in df.columns:
             units['CPC Classes'] = 'cpc_class'
-    
-    else:  # Both
+    else:
         units['Technology Areas'] = 'combined'
     
     units['Documents'] = 'document'
@@ -1343,7 +1388,7 @@ def get_available_units_for_roadmap(dataset_choice):
     return units
 
 def get_unit_preview(dataset_choice, selected_unit, top_n):
-    """Get preview of selected unit"""
+    """Get unit preview"""
     
     if dataset_choice == "Publications":
         df = st.session_state.publications_data
@@ -1365,7 +1410,6 @@ def get_unit_preview(dataset_choice, selected_unit, top_n):
     if col_name not in df.columns:
         return None
     
-    # Parse and count entities
     all_entities = []
     for entity_str in df[col_name].dropna():
         entities = re.split(r'[;,]', str(entity_str))
