@@ -127,8 +127,8 @@ def main():
         from pages import ai_insights
         ai_insights.render()
     elif page == "🔗 Causal Analysis":
-     	from pages import causal_analysis
-    	causal_analysis.render()
+        from pages import causal_analysis
+        causal_analysis.render()
     elif page == "📊 Custom Reports":
      	from pages import custom_reports
     	custom_reports.render()
