@@ -550,7 +550,7 @@ def generate_roadmap_report():
     
     results = {}
     
-    # Get data
+    # Get data - FIXED: Handle "Both" case properly
     dataset_choice = config['dataset']
     
     if dataset_choice == "Publications":
@@ -559,9 +559,17 @@ def generate_roadmap_report():
     elif dataset_choice == "Patents":
         df = st.session_state.patents_data
         dataset_type = 'patents'
-    else:
-        df = None
+    else:  # Both (Comparative)
+        # For "Both", use publications as primary, patents as secondary
+        df = st.session_state.publications_data
+        df_secondary = st.session_state.patents_data
         dataset_type = 'both'
+    
+    # Validate data
+    if df is None:
+        st.error("❌ No data available. Please upload data first.")
+        st.session_state.roadmap_results = {}
+        return
     
     # Execute each analysis
     for i, module_id in enumerate(pipeline):
@@ -571,19 +579,28 @@ def generate_roadmap_report():
         
         try:
             if module_id == 'temporal_trends':
-                results[module_id] = run_temporal_trends(df, config, dataset_type)
+                if dataset_type == 'both':
+                    results[module_id] = run_temporal_trends_both(df, df_secondary, config)
+                else:
+                    results[module_id] = run_temporal_trends(df, config, dataset_type)
             
             elif module_id == 'diversity_entropy':
                 results[module_id] = run_diversity_analysis(df, config, dataset_type)
             
             elif module_id == 'impact_analysis':
-                results[module_id] = run_impact_analysis(df, config, dataset_type)
+                if dataset_type == 'both':
+                    results[module_id] = run_impact_analysis_both(df, df_secondary, config)
+                else:
+                    results[module_id] = run_impact_analysis(df, config, dataset_type)
             
             elif module_id == 'clustering':
                 results[module_id] = run_clustering_analysis(df, config, dataset_type)
             
             elif module_id == 'geographic_evolution':
-                results[module_id] = run_geographic_evolution(df, config, dataset_type)
+                if dataset_type == 'both':
+                    results[module_id] = run_geographic_evolution_both(df, df_secondary, config)
+                else:
+                    results[module_id] = run_geographic_evolution(df, config, dataset_type)
             
             elif module_id == 'emerging_topics':
                 results[module_id] = run_emerging_topics(df, config, dataset_type)
@@ -595,6 +612,7 @@ def generate_roadmap_report():
                 'status': 'error',
                 'error': str(e)
             }
+            st.error(f"Error in {module_id}: {str(e)}")
     
     progress_bar.progress(1.0)
     status_text.text("✅ Report generation complete!")
@@ -607,6 +625,9 @@ def generate_roadmap_report():
 def run_temporal_trends(df, config, dataset_type):
     """Execute temporal trends analysis"""
     
+    if df is None:
+        return {'status': 'error', 'error': 'No data available'}
+    
     if 'year' not in df.columns:
         return {'status': 'error', 'error': 'Year column not available'}
     
@@ -615,9 +636,9 @@ def run_temporal_trends(df, config, dataset_type):
     # Calculate growth metrics
     if len(yearly) > 1:
         growth_rate = ((yearly['count'].iloc[-1] - yearly['count'].iloc[-2]) / 
-                      yearly['count'].iloc[-2] * 100)
+                      yearly['count'].iloc[-2] * 100) if yearly['count'].iloc[-2] > 0 else 0
         total_growth = ((yearly['count'].iloc[-1] - yearly['count'].iloc[0]) / 
-                       yearly['count'].iloc[0] * 100)
+                       yearly['count'].iloc[0] * 100) if yearly['count'].iloc[0] > 0 else 0
         avg_growth = yearly['count'].pct_change().mean() * 100
     else:
         growth_rate = 0
@@ -638,7 +659,7 @@ def run_temporal_trends(df, config, dataset_type):
     ))
     
     fig.update_layout(
-        title=f"Temporal Trends - {config['dataset']}",
+        title=f"Temporal Trends - {config.get('dataset', 'Data')}",
         xaxis_title="Year",
         yaxis_title="Count",
         template='plotly_white',
@@ -656,8 +677,73 @@ def run_temporal_trends(df, config, dataset_type):
         'figure': fig
     }
 
+def run_temporal_trends_both(df_pubs, df_pats, config):
+    """Execute temporal trends for both datasets"""
+    
+    if df_pubs is None or df_pats is None:
+        return {'status': 'error', 'error': 'Both datasets required'}
+    
+    if 'year' not in df_pubs.columns or 'year' not in df_pats.columns:
+        return {'status': 'error', 'error': 'Year column not available'}
+    
+    # Get yearly counts
+    pubs_yearly = df_pubs.groupby('year').size().reset_index(name='pubs_count')
+    pats_yearly = df_pats.groupby('year').size().reset_index(name='pats_count')
+    
+    # Merge on year
+    yearly = pd.merge(pubs_yearly, pats_yearly, on='year', how='outer').fillna(0)
+    
+    # Calculate growth metrics for both
+    pubs_growth = ((yearly['pubs_count'].iloc[-1] - yearly['pubs_count'].iloc[0]) / 
+                   yearly['pubs_count'].iloc[0] * 100) if yearly['pubs_count'].iloc[0] > 0 else 0
+    pats_growth = ((yearly['pats_count'].iloc[-1] - yearly['pats_count'].iloc[0]) / 
+                   yearly['pats_count'].iloc[0] * 100) if yearly['pats_count'].iloc[0] > 0 else 0
+    
+    # Create visualization
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=yearly['year'],
+        y=yearly['pubs_count'],
+        mode='lines+markers',
+        line=dict(width=3, color='#3498db'),
+        marker=dict(size=8),
+        name='Publications'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=yearly['year'],
+        y=yearly['pats_count'],
+        mode='lines+markers',
+        line=dict(width=3, color='#e74c3c'),
+        marker=dict(size=8),
+        name='Patents'
+    ))
+    
+    fig.update_layout(
+        title="Temporal Trends - Publications vs Patents",
+        xaxis_title="Year",
+        yaxis_title="Count",
+        template='plotly_white',
+        height=400,
+        hovermode='x unified'
+    )
+    
+    return {
+        'yearly_data': yearly,
+        'pubs_growth': pubs_growth,
+        'pats_growth': pats_growth,
+        'peak_year_pubs': int(yearly.loc[yearly['pubs_count'].idxmax(), 'year']),
+        'peak_year_pats': int(yearly.loc[yearly['pats_count'].idxmax(), 'year']),
+        'figure': fig,
+        'is_comparative': True
+    }
+
 def run_diversity_analysis(df, config, dataset_type):
     """Execute diversity analysis"""
+    
+    if df is None:
+        return {'status': 'error', 'error': 'No data available'}
     
     unit_col = config.get('unit_column')
     
@@ -672,6 +758,9 @@ def run_diversity_analysis(df, config, dataset_type):
     for entity_str in df[unit_col].dropna():
         entities = re.split(r'[;,]', str(entity_str))
         all_entities.extend([e.strip().lower() for e in entities if e.strip()])
+    
+    if len(all_entities) == 0:
+        return {'status': 'error', 'error': 'No entities found'}
     
     # Calculate entropy
     entity_counts = pd.Series(all_entities).value_counts(normalize=True)
@@ -688,8 +777,8 @@ def run_diversity_analysis(df, config, dataset_type):
     fig = px.bar(
         x=top_entities.index,
         y=top_entities.values,
-        title=f"Top 10 {config['unit']}",
-        labels={'x': config['unit'], 'y': 'Count'}
+        title=f"Top 10 {config.get('unit', 'Entities')}",
+        labels={'x': config.get('unit', 'Entity'), 'y': 'Count'}
     )
     
     fig.update_layout(template='plotly_white', height=400)
@@ -705,12 +794,18 @@ def run_diversity_analysis(df, config, dataset_type):
 def run_impact_analysis(df, config, dataset_type):
     """Execute impact analysis"""
     
+    if df is None:
+        return {'status': 'error', 'error': 'No data available'}
+    
     citation_col = 'citations' if dataset_type == 'publications' else 'forward_citations'
     
     if citation_col not in df.columns:
         return {'status': 'error', 'error': 'Citation data not available'}
     
     citations = df[citation_col].dropna()
+    
+    if len(citations) == 0:
+        return {'status': 'error', 'error': 'No citation data'}
     
     # Calculate metrics
     mean_citations = citations.mean()
@@ -729,8 +824,11 @@ def run_impact_analysis(df, config, dataset_type):
     # Citation distribution
     fig = go.Figure()
     
+    # Remove extreme outliers for better visualization
+    citations_viz = citations[citations <= citations.quantile(0.95)]
+    
     fig.add_trace(go.Histogram(
-        x=citations[citations <= citations.quantile(0.95)],  # Remove outliers for viz
+        x=citations_viz,
         nbinsx=30,
         marker_color='#e74c3c',
         name='Citations'
@@ -753,8 +851,61 @@ def run_impact_analysis(df, config, dataset_type):
         'figure': fig
     }
 
+def run_impact_analysis_both(df_pubs, df_pats, config):
+    """Execute impact analysis for both datasets"""
+    
+    if df_pubs is None or df_pats is None:
+        return {'status': 'error', 'error': 'Both datasets required'}
+    
+    # Publications citations
+    pubs_citations = df_pubs['citations'].dropna() if 'citations' in df_pubs.columns else pd.Series([])
+    
+    # Patents citations
+    pats_citations = df_pats['forward_citations'].dropna() if 'forward_citations' in df_pats.columns else pd.Series([])
+    
+    if len(pubs_citations) == 0 and len(pats_citations) == 0:
+        return {'status': 'error', 'error': 'No citation data'}
+    
+    # Calculate metrics
+    pubs_mean = pubs_citations.mean() if len(pubs_citations) > 0 else 0
+    pats_mean = pats_citations.mean() if len(pats_citations) > 0 else 0
+    
+    # Visualization - side by side histograms
+    fig = make_subplots(rows=1, cols=2, subplot_titles=('Publications', 'Patents'))
+    
+    if len(pubs_citations) > 0:
+        pubs_viz = pubs_citations[pubs_citations <= pubs_citations.quantile(0.95)]
+        fig.add_trace(
+            go.Histogram(x=pubs_viz, nbinsx=30, marker_color='#3498db', name='Publications'),
+            row=1, col=1
+        )
+    
+    if len(pats_citations) > 0:
+        pats_viz = pats_citations[pats_citations <= pats_citations.quantile(0.95)]
+        fig.add_trace(
+            go.Histogram(x=pats_viz, nbinsx=30, marker_color='#e74c3c', name='Patents'),
+            row=1, col=2
+        )
+    
+    fig.update_layout(
+        title="Citation Distribution Comparison",
+        template='plotly_white',
+        height=400,
+        showlegend=False
+    )
+    
+    return {
+        'pubs_mean': pubs_mean,
+        'pats_mean': pats_mean,
+        'figure': fig,
+        'is_comparative': True
+    }
+
 def run_clustering_analysis(df, config, dataset_type):
     """Execute clustering analysis"""
+    
+    if df is None:
+        return {'status': 'error', 'error': 'No data available'}
     
     # Prepare simple features
     features = []
@@ -822,12 +973,18 @@ def run_clustering_analysis(df, config, dataset_type):
 def run_geographic_evolution(df, config, dataset_type):
     """Execute geographic evolution analysis"""
     
+    if df is None:
+        return {'status': 'error', 'error': 'No data available'}
+    
     geo_col = 'country' if dataset_type == 'publications' else 'jurisdiction'
     
     if geo_col not in df.columns:
         return {'status': 'error', 'error': 'Geographic data not available'}
     
     geo_counts = df[geo_col].value_counts().head(10)
+    
+    if len(geo_counts) == 0:
+        return {'status': 'error', 'error': 'No geographic data'}
     
     # Visualization
     fig = px.pie(
@@ -845,8 +1002,58 @@ def run_geographic_evolution(df, config, dataset_type):
         'figure': fig
     }
 
+def run_geographic_evolution_both(df_pubs, df_pats, config):
+    """Execute geographic evolution for both datasets"""
+    
+    if df_pubs is None or df_pats is None:
+        return {'status': 'error', 'error': 'Both datasets required'}
+    
+    # Publications countries
+    pubs_geo = df_pubs['country'].value_counts().head(10) if 'country' in df_pubs.columns else pd.Series([])
+    
+    # Patents jurisdictions
+    pats_geo = df_pats['jurisdiction'].value_counts().head(10) if 'jurisdiction' in df_pats.columns else pd.Series([])
+    
+    if len(pubs_geo) == 0 and len(pats_geo) == 0:
+        return {'status': 'error', 'error': 'No geographic data'}
+    
+    # Visualization - side by side
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Publications by Country', 'Patents by Jurisdiction'),
+        specs=[[{'type': 'pie'}, {'type': 'pie'}]]
+    )
+    
+    if len(pubs_geo) > 0:
+        fig.add_trace(
+            go.Pie(labels=pubs_geo.index, values=pubs_geo.values, name='Publications'),
+            row=1, col=1
+        )
+    
+    if len(pats_geo) > 0:
+        fig.add_trace(
+            go.Pie(labels=pats_geo.index, values=pats_geo.values, name='Patents'),
+            row=1, col=2
+        )
+    
+    fig.update_layout(
+        title="Geographic Distribution Comparison",
+        template='plotly_white',
+        height=400
+    )
+    
+    return {
+        'pubs_countries': pubs_geo.to_dict() if len(pubs_geo) > 0 else {},
+        'pats_jurisdictions': pats_geo.to_dict() if len(pats_geo) > 0 else {},
+        'figure': fig,
+        'is_comparative': True
+    }
+
 def run_emerging_topics(df, config, dataset_type):
     """Execute emerging topics detection"""
+    
+    if df is None:
+        return {'status': 'error', 'error': 'No data available'}
     
     if 'year' not in df.columns:
         return {'status': 'error', 'error': 'Year data required'}
@@ -857,6 +1064,9 @@ def run_emerging_topics(df, config, dataset_type):
     
     recent_df = df[df['year'] >= cutoff_year]
     older_df = df[df['year'] < cutoff_year]
+    
+    if len(recent_df) == 0 or len(older_df) == 0:
+        return {'status': 'error', 'error': 'Insufficient temporal data for trend analysis'}
     
     # For keywords/IPC analysis
     keyword_col = config.get('unit_column')
@@ -875,6 +1085,9 @@ def run_emerging_topics(df, config, dataset_type):
     recent_entities = get_entities(recent_df)
     older_entities = get_entities(older_df)
     
+    if len(recent_entities) == 0:
+        return {'status': 'error', 'error': 'No entities found in recent period'}
+    
     recent_counts = Counter(recent_entities)
     older_counts = Counter(older_entities)
     
@@ -887,12 +1100,16 @@ def run_emerging_topics(df, config, dataset_type):
         else:
             growth = 1000  # New topic
         
-        emerging.append({
-            'entity': entity,
-            'recent_count': recent_count,
-            'older_count': older_count,
-            'growth_rate': growth
-        })
+        if growth > 0:  # Only include growing topics
+            emerging.append({
+                'entity': entity,
+                'recent_count': recent_count,
+                'older_count': older_count,
+                'growth_rate': growth
+            })
+    
+    if len(emerging) == 0:
+        return {'status': 'error', 'error': 'No emerging topics detected'}
     
     # Sort by growth
     emerging = sorted(emerging, key=lambda x: x['growth_rate'], reverse=True)[:10]
@@ -906,7 +1123,7 @@ def run_emerging_topics(df, config, dataset_type):
         y='entity',
         orientation='h',
         title="Top 10 Emerging Topics (by Growth Rate)",
-        labels={'growth_rate': 'Growth Rate (%)', 'entity': config['unit']}
+        labels={'growth_rate': 'Growth Rate (%)', 'entity': config.get('unit', 'Entity')}
     )
     
     fig.update_layout(
@@ -920,180 +1137,97 @@ def run_emerging_topics(df, config, dataset_type):
         'figure': fig
     }
 
-def display_roadmap_report():
-    """Display generated roadmap report"""
-    
-    results = st.session_state.roadmap_results
-    config = st.session_state.roadmap_config
-    
-    # Report header
-    st.markdown(f"# {config.get('title', 'Technology Roadmap Report')}")
-    
-    if config.get('subtitle'):
-        st.markdown(f"*{config.get('subtitle')}*")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**Date:** {config.get('report_date', datetime.now().strftime('%Y-%m-%d'))}")
-    with col2:
-        if config.get('author'):
-            st.markdown(f"**Author:** {config.get('author')}")
-    
-    st.markdown("---")
-    
-    # Executive summary
-    st.markdown("## 📋 Executive Summary")
-    
-    st.markdown(f"""
-    This technology roadmap analyzes **{config.get('dataset')}** data 
-    using **{config.get('unit')}** as the primary unit of analysis.
-    
-    The analysis includes **{len(results)} analytical perspectives**, providing comprehensive 
-    insights into technology evolution, patterns, and future directions.
-    """)
-    
-    st.markdown("---")
-    
-    # Display each analysis result
-    for i, (module_id, result) in enumerate(results.items(), 1):
-        if result.get('status') == 'success':
-            st.markdown(f"## {i}. {module_id.replace('_', ' ').title()}")
-            
-            # Display module-specific results
-            if module_id == 'temporal_trends':
-                display_temporal_results(result)
-            
-            elif module_id == 'diversity_entropy':
-                display_diversity_results(result)
-            
-            elif module_id == 'impact_analysis':
-                display_impact_results(result)
-            
-            elif module_id == 'clustering':
-                display_clustering_results(result)
-            
-            elif module_id == 'geographic_evolution':
-                display_geographic_results(result)
-            
-            elif module_id == 'emerging_topics':
-                display_emerging_results(result)
-            
-            st.markdown("---")
-        
-        elif result.get('status') == 'skip':
-            st.info(f"ℹ️ {module_id.replace('_', ' ').title()}: {result.get('message')}")
-        
-        elif result.get('status') == 'error':
-            st.error(f"❌ {module_id.replace('_', ' ').title()}: {result.get('error')}")
-    
-    # Recommendations
-    if config.get('include_recommendations'):
-        st.markdown("## 🎯 Strategic Recommendations")
-        generate_recommendations(results, config)
-
+# Also update display_temporal_results to handle comparative case
 def display_temporal_results(result):
     """Display temporal trends results"""
     
-    col1, col2, col3, col4 = st.columns(4)
+    if result.get('is_comparative'):
+        # Comparative display
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Publications Growth", f"{result['pubs_growth']:.1f}%")
+            st.metric("Peak Year (Pubs)", f"{result['peak_year_pubs']}")
+        
+        with col2:
+            st.metric("Patents Growth", f"{result['pats_growth']:.1f}%")
+            st.metric("Peak Year (Pats)", f"{result['peak_year_pats']}")
     
-    with col1:
-        st.metric("Recent Growth", f"{result['growth_rate']:.1f}%")
-    
-    with col2:
-        st.metric("Total Growth", f"{result['total_growth']:.1f}%")
-    
-    with col3:
-        st.metric("Peak Year", f"{result['peak_year']}")
-    
-    with col4:
-        st.metric("Peak Count", f"{result['peak_count']:,}")
+    else:
+        # Single dataset display
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Recent Growth", f"{result['growth_rate']:.1f}%")
+        
+        with col2:
+            st.metric("Total Growth", f"{result['total_growth']:.1f}%")
+        
+        with col3:
+            st.metric("Peak Year", f"{result['peak_year']}")
+        
+        with col4:
+            st.metric("Peak Count", f"{result['peak_count']:,}")
     
     st.plotly_chart(result['figure'], use_container_width=True)
     
     # Interpretation
-    if result['growth_rate'] > 20:
+    growth_rate = result.get('growth_rate', result.get('pubs_growth', 0))
+    
+    if growth_rate > 20:
         st.success("📈 **Strong growth trend** - Technology is rapidly expanding")
-    elif result['growth_rate'] > 5:
+    elif growth_rate > 5:
         st.info("📊 **Moderate growth** - Steady development")
     else:
         st.warning("📉 **Slow/declining growth** - May indicate maturity or declining interest")
 
-def display_diversity_results(result):
-    """Display diversity analysis results"""
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Shannon Entropy", f"{result['entropy']:.3f}")
-    
-    with col2:
-        st.metric("Diversity Score", f"{result['diversity_score']:.2f}")
-    
-    with col3:
-        st.metric("Unique Entities", f"{result['unique_entities']:,}")
-    
-    st.plotly_chart(result['figure'], use_container_width=True)
-    
-    # Interpretation
-    if result['diversity_score'] > 0.7:
-        st.success("🌈 **High diversity** - Field is highly distributed across entities")
-    elif result['diversity_score'] > 0.4:
-        st.info("📊 **Moderate diversity** - Some concentration but fairly distributed")
-    else:
-        st.warning("🎯 **High concentration** - Field dominated by few entities")
-
 def display_impact_results(result):
     """Display impact analysis results"""
     
-    col1, col2, col3, col4 = st.columns(4)
+    if result.get('is_comparative'):
+        # Comparative display
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Pubs Mean Citations", f"{result['pubs_mean']:.1f}")
+        
+        with col2:
+            st.metric("Patents Mean Citations", f"{result['pats_mean']:.1f}")
     
-    with col1:
-        st.metric("Mean Citations", f"{result['mean_citations']:.1f}")
-    
-    with col2:
-        st.metric("Median Citations", f"{result['median_citations']:.0f}")
-    
-    with col3:
-        st.metric("H-Index", f"{result['h_index']}")
-    
-    with col4:
-        st.metric("Highly Cited (Top 10%)", f"{result['highly_cited']}")
-    
-    st.plotly_chart(result['figure'], use_container_width=True)
-
-def display_clustering_results(result):
-    """Display clustering results"""
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Number of Clusters", result['n_clusters'])
-    
-    with col2:
-        cluster_sizes = result['cluster_sizes']
-        avg_size = np.mean(list(cluster_sizes.values()))
-        st.metric("Avg Cluster Size", f"{avg_size:.0f}")
+    else:
+        # Single dataset display
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Mean Citations", f"{result['mean_citations']:.1f}")
+        
+        with col2:
+            st.metric("Median Citations", f"{result['median_citations']:.0f}")
+        
+        with col3:
+            st.metric("H-Index", f"{result['h_index']}")
+        
+        with col4:
+            st.metric("Highly Cited (Top 10%)", f"{result['highly_cited']}")
     
     st.plotly_chart(result['figure'], use_container_width=True)
-    
-    # Show cluster sizes
-    st.markdown("**Cluster Sizes:**")
-    for cluster_id, size in result['cluster_sizes'].items():
-        st.write(f"- Cluster {cluster_id}: {size} items")
 
 def display_geographic_results(result):
     """Display geographic results"""
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Unique Countries", result['unique_countries'])
-    
-    with col2:
-        top_country = list(result['top_countries'].keys())[0]
-        st.metric("Leading Country", top_country)
-    
-    st.plotly_chart(result['figure'], use_container_width=True)
+    if result.get('is_comparative'):
+        st.plotly_chart(result['figure'], use_container_width=True)
+    else:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Unique Countries", result['unique_countries'])
+        
+        with col2:
+            top_country = list(result['top_countries'].keys())[0]
+            st.metric("Leading Country", top_country)
+        
+        st.plotly_chart(result['figure'], use_container_width=True)
 
 def display_emerging_results(result):
     """Display emerging topics results"""
