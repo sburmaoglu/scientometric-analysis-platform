@@ -1,6 +1,7 @@
 """Comparative Analysis Page"""
 
 import streamlit as st
+import pandas as pd  # <-- ADDED THIS
 import plotly.graph_objects as go
 
 def render():
