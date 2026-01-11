@@ -130,8 +130,8 @@ def main():
         from pages import causal_analysis
         causal_analysis.render()
     elif page == "📊 Custom Reports":
-     	from pages import custom_reports
-    	custom_reports.render()
+        from pages import custom_reports
+        custom_reports.render()
     
     # Footer
     st.markdown("---")
