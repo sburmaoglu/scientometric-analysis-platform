@@ -112,6 +112,7 @@ def main():
     elif page == "🗺️ Geographic Analysis":
         from pages import geographic_analysis
         geographic_analysis.render()
+	
 	elif page == "🔬 Advanced Analytics":
     	from pages import advanced_analytics
     	advanced_analytics.render()
