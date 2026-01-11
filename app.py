@@ -53,7 +53,8 @@ def main():
                 "📈 Temporal Analysis",
                 "🗺️ Geographic Analysis",
                 "🔬 Advanced Analytics",
-                "🏷️ Topic Modeling"
+                "🏷️ Topic Modeling",
+                "🤖 AI Insights"
             ],
             label_visibility="collapsed"
         )
@@ -120,6 +121,9 @@ def main():
     elif page == "🏷️ Topic Modeling":
         from pages import topic_modeling
         topic_modeling.render()
+    elif page == "🤖 AI Insights":
+        from pages import ai_insights
+        ai_insights.render()
     
     # Footer
     st.markdown("---")
