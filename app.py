@@ -43,21 +43,21 @@ def main():
         
         # Navigation menu
         page = st.radio(
-   		 "Select Page",
-  		  [
-       			 "🏠 Home",
-      			  "📤 Data Upload",
-     			   "📚 Publications Analysis",
-     			   "💡 Patents Analysis",
-     			   "🔄 Comparative Analysis",
-     			   "📈 Temporal Analysis",
-     			   "🗺️ Geographic Analysis",
-     			   "🔬 Advanced Analytics",      # NEW
-     			   "🏷️ Topic Modeling"           # NEW
-   		 ],
-    		label_visibility="collapsed"
-	)
-		
+            "Select Page",
+            [
+                "🏠 Home",
+                "📤 Data Upload",
+                "📚 Publications Analysis",
+                "💡 Patents Analysis",
+                "🔄 Comparative Analysis",
+                "📈 Temporal Analysis",
+                "🗺️ Geographic Analysis",
+                "🔬 Advanced Analytics",
+                "🏷️ Topic Modeling"
+            ],
+            label_visibility="collapsed"
+        )
+        
         st.markdown("---")
         st.markdown("### 📊 Data Status")
         
@@ -84,7 +84,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
     
-    # Route to pages - Simple imports!
+    # Route to pages
     if page == "🏠 Home":
         from pages import home
         home.render()
@@ -112,14 +112,14 @@ def main():
     elif page == "🗺️ Geographic Analysis":
         from pages import geographic_analysis
         geographic_analysis.render()
-	
-	elif page == "🔬 Advanced Analytics":
-    	from pages import advanced_analytics
-    	advanced_analytics.render()
-
-	elif page == "🏷️ Topic Modeling":
-    	from pages import topic_modeling
-    	topic_modeling.render()
+    
+    elif page == "🔬 Advanced Analytics":
+        from pages import advanced_analytics
+        advanced_analytics.render()
+    
+    elif page == "🏷️ Topic Modeling":
+        from pages import topic_modeling
+        topic_modeling.render()
     
     # Footer
     st.markdown("---")
