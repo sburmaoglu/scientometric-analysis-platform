@@ -223,18 +223,24 @@ def render_unit_selection():
     st.markdown("### 🎯 Available Analysis Units")
     
     unit_descriptions = {
-        'Authors': '👥 Track research evolution through author networks',
-        'Inventors': '👥 Track innovation through inventor networks',
-        'Organizations': '🏢 Monitor institutional technology development',
-        'Countries': '🌍 Analyze geographic technology leadership',
-        'Jurisdictions': '🌍 Analyze patent jurisdiction patterns',
-        'Keywords': '🏷️ Follow topic evolution and emergence',
-        'IPC Classes': '🔬 Map patent technology classification (IPC)',
-        'CPC Classes': '🔬 Map patent technology classification (CPC)',
-        'Technology Areas': '📊 Broad technology domain analysis',
-        'Journals': '📚 Track publication venue trends',
+        'Authors': '👥 Track research evolution through author networks (Publications)',
+        'Inventors': '👥 Track innovation through inventor networks (Patents)',
+        'Organizations': '🏢 Monitor institutional technology development (Patents)',
+        'Countries': '🌍 Analyze geographic technology leadership (Publications)',
+        'Jurisdictions': '🌍 Analyze patent jurisdiction patterns (Patents)',
+        'Keywords': '🏷️ Follow topic evolution and emergence (Publications)',
+        'IPC Classes': '🔬 Map patent technology classification (Patents)',
+        'CPC Classes': '🔬 Map patent technology classification (Patents)',
+        'Journals': '📚 Track publication venue trends (Publications)',
         'Documents': '📄 Document-level granular analysis'
     }
+    
+    # For "Both" datasets, show warning about limited units
+    if dataset_choice == "Both (Comparative)":
+        st.warning("⚠️ **Note:** When analyzing both datasets together, only temporal and impact analyses are fully supported. For detailed unit-based analysis, select Publications or Patents individually.")
+        
+        # Restrict available units for "Both"
+        available_units = {'Documents': 'document'}
     
     selected_unit = st.radio(
         "Choose your primary unit of analysis",
@@ -247,32 +253,37 @@ def render_unit_selection():
     
     st.markdown("---")
     
-    # Unit-specific configuration
-    st.markdown("### ⚙️ Unit Configuration")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if selected_unit in ['IPC Classes', 'CPC Classes', 'Keywords']:
-            focus_top_n = st.slider("Focus on top N entities", 5, 50, 10,
-                                   help="Limit analysis to most frequent entities")
-        else:
-            focus_top_n = st.slider("Focus on top N entities", 5, 100, 20)
-    
-    with col2:
-        time_granularity = st.selectbox(
-            "Time Granularity",
-            ["Yearly", "3-Year Periods", "5-Year Periods"],
-            help="How to aggregate temporal data"
-        )
+    # Unit-specific configuration (only if not "Both" or not "Documents")
+    if dataset_choice != "Both (Comparative)" or selected_unit == "Documents":
+        st.markdown("### ⚙️ Unit Configuration")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if selected_unit in ['IPC Classes', 'CPC Classes', 'Keywords']:
+                focus_top_n = st.slider("Focus on top N entities", 5, 50, 10,
+                                       help="Limit analysis to most frequent entities")
+            else:
+                focus_top_n = st.slider("Focus on top N entities", 5, 100, 20)
+        
+        with col2:
+            time_granularity = st.selectbox(
+                "Time Granularity",
+                ["Yearly", "3-Year Periods", "5-Year Periods"],
+                help="How to aggregate temporal data"
+            )
+    else:
+        focus_top_n = 10
+        time_granularity = "Yearly"
     
     # Preview unit data
-    st.markdown("### 📊 Unit Preview")
-    
-    preview_data = get_unit_preview(dataset_choice, selected_unit, focus_top_n)
-    
-    if preview_data is not None:
-        st.dataframe(preview_data.head(10), use_container_width=True, hide_index=True)
+    if dataset_choice != "Both (Comparative)":
+        st.markdown("### 📊 Unit Preview")
+        
+        preview_data = get_unit_preview(dataset_choice, selected_unit, focus_top_n)
+        
+        if preview_data is not None:
+            st.dataframe(preview_data.head(10), use_container_width=True, hide_index=True)
     
     st.markdown("---")
     
@@ -313,41 +324,56 @@ def render_pipeline_builder():
     
     st.markdown("---")
     
-    # Available analysis modules
+    # Available analysis modules - adjust based on dataset
     st.markdown("### 📦 Select Analysis Modules")
     
-    analysis_modules = {
+    dataset_choice = config['dataset']
+    
+    # Define all modules
+    all_modules = {
         'temporal_trends': {
             'name': '📈 Temporal Trends',
             'description': 'Growth patterns, trends, and inflection points',
-            'required': True
+            'required': True,
+            'compatible': ['Publications', 'Patents', 'Both (Comparative)']
         },
         'diversity_entropy': {
             'name': '📊 Diversity Analysis',
             'description': 'Shannon entropy and concentration metrics',
-            'required': False
+            'required': False,
+            'compatible': ['Publications', 'Patents']  # NOT compatible with "Both"
         },
         'impact_analysis': {
             'name': '💥 Impact Assessment',
             'description': 'Citation analysis and research impact',
-            'required': False
+            'required': False,
+            'compatible': ['Publications', 'Patents', 'Both (Comparative)']
         },
         'clustering': {
             'name': '🎯 Clustering Analysis',
             'description': 'Group similar entities/technologies',
-            'required': False
+            'required': False,
+            'compatible': ['Publications', 'Patents']  # NOT compatible with "Both"
         },
         'geographic_evolution': {
             'name': '🌍 Geographic Evolution',
             'description': 'Spatial development and diffusion',
-            'required': False
+            'required': False,
+            'compatible': ['Publications', 'Patents', 'Both (Comparative)']
         },
         'emerging_topics': {
             'name': '🌟 Emerging Topics',
             'description': 'Identify growing research areas',
-            'required': False
+            'required': False,
+            'compatible': ['Publications', 'Patents']  # NOT compatible with "Both"
         }
     }
+    
+    # Filter modules based on dataset compatibility
+    analysis_modules = {k: v for k, v in all_modules.items() if dataset_choice in v['compatible']}
+    
+    if dataset_choice == "Both (Comparative)":
+        st.info("ℹ️ **Comparative Mode:** Some analyses are disabled for combined datasets. For full analysis capabilities, analyze Publications and Patents separately.")
     
     # Display modules with checkboxes
     selected_analyses = ['temporal_trends']  # Always include
@@ -747,10 +773,17 @@ def run_diversity_analysis(df, config, dataset_type):
     if df is None:
         return {'status': 'error', 'error': 'No data available'}
     
+    # FIXED: Handle "Both" datasets case
+    if dataset_type == 'both':
+        return {'status': 'skip', 'message': 'Diversity analysis not supported for combined datasets. Analyze Publications or Patents separately.'}
+    
     unit_col = config.get('unit_column')
     
     if unit_col == 'document':
         return {'status': 'skip', 'message': 'Diversity not applicable to documents'}
+    
+    if unit_col == 'combined':
+        return {'status': 'skip', 'message': 'Diversity not supported for combined analysis'}
     
     if unit_col not in df.columns:
         return {'status': 'error', 'error': f'Column {unit_col} not available'}
@@ -904,6 +937,10 @@ def run_clustering_analysis(df, config, dataset_type):
     if df is None:
         return {'status': 'error', 'error': 'No data available'}
     
+    # FIXED: Handle "Both" datasets case
+    if dataset_type == 'both':
+        return {'status': 'skip', 'message': 'Clustering not supported for combined datasets. Analyze Publications or Patents separately.'}
+    
     features = []
     feature_names = []
     
@@ -1040,6 +1077,10 @@ def run_emerging_topics(df, config, dataset_type):
     if df is None:
         return {'status': 'error', 'error': 'No data available'}
     
+    # FIXED: Handle "Both" datasets case
+    if dataset_type == 'both':
+        return {'status': 'skip', 'message': 'Emerging topics not supported for combined datasets. Analyze Publications or Patents separately.'}
+    
     if 'year' not in df.columns:
         return {'status': 'error', 'error': 'Year data required'}
     
@@ -1054,8 +1095,8 @@ def run_emerging_topics(df, config, dataset_type):
     
     keyword_col = config.get('unit_column')
     
-    if keyword_col == 'document' or keyword_col not in df.columns:
-        return {'status': 'skip', 'message': 'Emerging topics requires keyword data'}
+    if keyword_col == 'document' or keyword_col == 'combined' or keyword_col not in df.columns:
+        return {'status': 'skip', 'message': 'Emerging topics requires keyword/classification data'}
     
     def get_entities(dataframe):
         entities = []
@@ -1217,6 +1258,11 @@ def display_temporal_results(result):
 def display_diversity_results(result):
     """Display diversity analysis results"""
     
+    # FIXED: Check if result has required fields before accessing
+    if 'entropy' not in result or 'diversity_score' not in result:
+        st.warning("Diversity metrics not available")
+        return
+    
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Shannon Entropy", f"{result['entropy']:.3f}")
@@ -1225,11 +1271,12 @@ def display_diversity_results(result):
     with col3:
         st.metric("Unique Entities", f"{result['unique_entities']:,}")
     
-    st.plotly_chart(result['figure'], use_container_width=True)
+    if 'figure' in result:
+        st.plotly_chart(result['figure'], use_container_width=True)
     
-    if result['diversity_score'] > 0.7:
+    if result.get('diversity_score', 0) > 0.7:
         st.success("🌈 **High diversity** - Field is highly distributed")
-    elif result['diversity_score'] > 0.4:
+    elif result.get('diversity_score', 0) > 0.4:
         st.info("📊 **Moderate diversity** - Fairly distributed")
     else:
         st.warning("🎯 **High concentration** - Dominated by few entities")
@@ -1353,7 +1400,7 @@ def export_roadmap_data():
     )
 
 def get_available_units_for_roadmap(dataset_choice):
-    """Get available units"""
+    """Get available units based on dataset - FIXED"""
     
     units = {}
     
@@ -1367,6 +1414,7 @@ def get_available_units_for_roadmap(dataset_choice):
             units['Keywords'] = 'keywords' if 'keywords' in df.columns else 'author_keywords'
         if 'journal' in df.columns:
             units['Journals'] = 'journal'
+        units['Documents'] = 'document'
     
     elif dataset_choice == "Patents":
         df = st.session_state.patents_data
@@ -1380,10 +1428,11 @@ def get_available_units_for_roadmap(dataset_choice):
             units['IPC Classes'] = 'ipc_class'
         if 'cpc_class' in df.columns:
             units['CPC Classes'] = 'cpc_class'
-    else:
-        units['Technology Areas'] = 'combined'
+        units['Documents'] = 'document'
     
-    units['Documents'] = 'document'
+    else:  # Both (Comparative)
+        # For "Both", only allow Documents (no entity-based analysis)
+        units['Documents'] = 'document'
     
     return units
 
