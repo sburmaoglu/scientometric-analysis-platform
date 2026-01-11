@@ -57,16 +57,7 @@ def main():
    		 ],
     		label_visibility="collapsed"
 	)
-
-# In the routing section, add:
-elif page == "🔬 Advanced Analytics":
-    import pages.advanced_analytics as advanced_analytics
-    advanced_analytics.render()
-
-elif page == "🏷️ Topic Modeling":
-    import pages.topic_modeling as topic_modeling
-    topic_modeling.render()
-
+		
         st.markdown("---")
         st.markdown("### 📊 Data Status")
         
@@ -121,6 +112,13 @@ elif page == "🏷️ Topic Modeling":
     elif page == "🗺️ Geographic Analysis":
         from pages import geographic_analysis
         geographic_analysis.render()
+	elif page == "🔬 Advanced Analytics":
+    	from pages import advanced_analytics
+    	advanced_analytics.render()
+
+	elif page == "🏷️ Topic Modeling":
+    	from pages import topic_modeling
+    	topic_modeling.render()
     
     # Footer
     st.markdown("---")
