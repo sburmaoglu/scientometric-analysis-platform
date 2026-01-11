@@ -9,12 +9,13 @@ from scipy.stats import entropy
 from scipy.spatial.distance import jensenshannon
 from collections import Counter
 import networkx as nx
+import re
 
 def render():
     """Render advanced analytics page"""
     
     st.title("🔬 Advanced Analytics")
-    st.markdown("Advanced scientometric analysis methods")
+    st.markdown("Advanced scientometric analysis methods with flexible unit selection")
     
     if st.session_state.publications_data is None and st.session_state.patents_data is None:
         st.warning("⚠️ Please upload data first")
@@ -51,18 +52,76 @@ def render():
     elif analysis_type == "Link Prediction":
         render_link_prediction()
 
+def get_available_units(df, dataset_type):
+    """Get available analysis units for the dataset"""
+    
+    units = {}
+    
+    # Always available
+    if 'year' in df.columns:
+        units['Temporal'] = 'year'
+    
+    # Entity-based (authors/inventors)
+    if dataset_type == 'publications':
+        if 'author' in df.columns:
+            units['Authors'] = 'author'
+    else:
+        if 'inventor' in df.columns:
+            units['Inventors'] = 'inventor'
+        if 'assignee' in df.columns:
+            units['Organizations'] = 'assignee'
+    
+    # Keyword-based
+    keyword_candidates = ['keywords', 'author_keywords', 'Keywords', 'ipc_class', 'cpc_class']
+    for col in keyword_candidates:
+        if col in df.columns:
+            units['Keywords'] = col
+            break
+    
+    # Geographic
+    geo_col = 'country' if dataset_type == 'publications' else 'jurisdiction'
+    if geo_col in df.columns:
+        units['Geographic'] = geo_col
+    
+    # Journal/Technology
+    if dataset_type == 'publications':
+        if 'journal' in df.columns:
+            units['Journals'] = 'journal'
+    else:
+        if 'ipc_class' in df.columns:
+            units['Technology Classes'] = 'ipc_class'
+    
+    return units
+
+def parse_entity_list(entity_str, separator=';'):
+    """Parse semicolon or comma separated entities"""
+    if pd.isna(entity_str):
+        return []
+    
+    # Try semicolon first, then comma
+    entities = re.split(r'[;,]', str(entity_str))
+    entities = [e.strip().lower() for e in entities if e.strip()]
+    
+    # For IPC/CPC classes, take first 4 characters
+    if len(entities) > 0 and len(entities[0]) > 4 and entities[0][0].isalpha():
+        entities = [e[:4] for e in entities]
+    
+    return entities
+
 def render_shannon_entropy():
-    """Shannon entropy analysis for diversity measurement"""
+    """Shannon entropy analysis with unit selection"""
     
     st.subheader("📊 Shannon Entropy Analysis")
     st.markdown("""
-    **Shannon Entropy** measures the diversity/uncertainty in a distribution.
-    Higher entropy = more diverse/uncertain, Lower entropy = more concentrated.
+    **Shannon Entropy** measures diversity/uncertainty in a distribution.
     
     **Formula:** H(X) = -Σ p(x) log₂ p(x)
+    
+    - **Higher entropy** = More diverse/uncertain
+    - **Lower entropy** = More concentrated
     """)
     
-    # Choose dataset
+    # Dataset selection
     dataset = st.radio("Select Dataset", ["Publications", "Patents"], horizontal=True)
     
     if dataset == "Publications":
@@ -70,119 +129,170 @@ def render_shannon_entropy():
             st.warning("⚠️ Upload publications data")
             return
         df = st.session_state.publications_data
+        dataset_type = 'publications'
     else:
         if st.session_state.patents_data is None:
             st.warning("⚠️ Upload patents data")
             return
         df = st.session_state.patents_data
+        dataset_type = 'patents'
+    
+    # Get available units
+    available_units = get_available_units(df, dataset_type)
+    
+    if not available_units:
+        st.error("No analysis units available in this dataset")
+        return
     
     st.markdown("---")
     
-    # Calculate entropy for different dimensions
+    # Unit selection
+    st.markdown("### 🎯 Select Analysis Units")
+    
+    selected_units = st.multiselect(
+        "Choose units to analyze",
+        list(available_units.keys()),
+        default=list(available_units.keys())[:2] if len(available_units) >= 2 else list(available_units.keys())
+    )
+    
+    if not selected_units:
+        st.warning("Please select at least one analysis unit")
+        return
+    
+    st.markdown("---")
+    
+    # Calculate entropy for each selected unit
     st.markdown("### 📈 Entropy Metrics")
     
     results = {}
     
-    # Temporal entropy
-    if 'year' in df.columns:
-        year_dist = df['year'].value_counts(normalize=True)
-        temporal_entropy = entropy(year_dist, base=2)
-        results['Temporal Entropy'] = temporal_entropy
-    
-    # Author/Inventor diversity
-    if dataset == "Publications" and 'author' in df.columns:
-        all_authors = []
-        for authors in df['author'].dropna():
-            all_authors.extend(str(authors).split(';'))
-        author_dist = pd.Series(all_authors).value_counts(normalize=True)
-        author_entropy = entropy(author_dist, base=2)
-        results['Author Diversity Entropy'] = author_entropy
-    
-    elif dataset == "Patents" and 'inventor' in df.columns:
-        all_inventors = []
-        for inventors in df['inventor'].dropna():
-            all_inventors.extend(str(inventors).split(';'))
-        inventor_dist = pd.Series(all_inventors).value_counts(normalize=True)
-        results['Inventor Diversity Entropy'] = inventor_dist
-    
-    # Geographic entropy
-    geo_col = 'country' if dataset == "Publications" else 'jurisdiction'
-    if geo_col in df.columns:
-        geo_dist = df[geo_col].value_counts(normalize=True)
-        geo_entropy = entropy(geo_dist, base=2)
-        results['Geographic Entropy'] = geo_entropy
-    
-    # Technology entropy (for patents)
-    if dataset == "Patents" and 'ipc_class' in df.columns:
-        all_classes = []
-        for classes in df['ipc_class'].dropna():
-            classes_list = str(classes).split(';')
-            all_classes.extend([c.strip()[:4] for c in classes_list])
-        tech_dist = pd.Series(all_classes).value_counts(normalize=True)
-        tech_entropy = entropy(tech_dist, base=2)
-        results['Technology Entropy'] = tech_entropy
+    for unit_name in selected_units:
+        col_name = available_units[unit_name]
+        
+        if col_name in df.columns:
+            # Handle list-based columns (authors, keywords, etc.)
+            if unit_name in ['Authors', 'Inventors', 'Organizations', 'Keywords', 'Technology Classes']:
+                all_items = []
+                for item_str in df[col_name].dropna():
+                    all_items.extend(parse_entity_list(item_str))
+                
+                if all_items:
+                    item_dist = pd.Series(all_items).value_counts(normalize=True)
+                    unit_entropy = entropy(item_dist, base=2)
+                    results[unit_name] = unit_entropy
+            else:
+                # Direct columns (year, journal, geographic)
+                item_dist = df[col_name].value_counts(normalize=True)
+                if len(item_dist) > 0:
+                    unit_entropy = entropy(item_dist, base=2)
+                    results[unit_name] = unit_entropy
     
     # Display results
-    cols = st.columns(len(results))
-    for idx, (metric, value) in enumerate(results.items()):
-        with cols[idx]:
-            st.metric(metric, f"{value:.3f}")
+    if results:
+        cols = st.columns(min(len(results), 4))
+        for idx, (metric, value) in enumerate(results.items()):
+            with cols[idx % 4]:
+                st.metric(f"{metric} Entropy", f"{value:.3f} bits")
     
     st.markdown("---")
     
-    # Visualization
-    st.markdown("### 📊 Entropy Over Time")
-    
-    if 'year' in df.columns:
-        years = sorted(df['year'].dropna().unique())
-        entropy_over_time = []
+    # Temporal entropy evolution (if year available)
+    if 'year' in df.columns and len(selected_units) > 0:
+        st.markdown("### 📊 Entropy Evolution Over Time")
         
-        for year in years:
-            year_df = df[df['year'] == year]
-            
-            # Calculate entropy for this year's geographic distribution
-            if geo_col in year_df.columns:
-                dist = year_df[geo_col].value_counts(normalize=True)
-                year_entropy = entropy(dist, base=2)
-                entropy_over_time.append(year_entropy)
-            else:
-                entropy_over_time.append(np.nan)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=years,
-            y=entropy_over_time,
-            mode='lines+markers',
-            name='Geographic Entropy',
-            line=dict(width=3, color='#667eea')
-        ))
-        
-        fig.update_layout(
-            title="Geographic Entropy Over Time",
-            xaxis_title="Year",
-            yaxis_title="Shannon Entropy (bits)",
-            template='plotly_white',
-            height=400
+        # Let user select which unit to track over time
+        unit_to_track = st.selectbox(
+            "Select unit to track over time",
+            [u for u in selected_units if u != 'Temporal']
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        if unit_to_track:
+            col_name = available_units[unit_to_track]
+            
+            years = sorted(df['year'].dropna().unique())
+            entropy_over_time = []
+            
+            for year in years:
+                year_df = df[df['year'] == year]
+                
+                # Calculate entropy for this year
+                if unit_to_track in ['Authors', 'Inventors', 'Organizations', 'Keywords', 'Technology Classes']:
+                    all_items = []
+                    for item_str in year_df[col_name].dropna():
+                        all_items.extend(parse_entity_list(item_str))
+                    
+                    if all_items:
+                        item_dist = pd.Series(all_items).value_counts(normalize=True)
+                        year_entropy = entropy(item_dist, base=2)
+                        entropy_over_time.append(year_entropy)
+                    else:
+                        entropy_over_time.append(np.nan)
+                else:
+                    item_dist = year_df[col_name].value_counts(normalize=True)
+                    if len(item_dist) > 1:
+                        year_entropy = entropy(item_dist, base=2)
+                        entropy_over_time.append(year_entropy)
+                    else:
+                        entropy_over_time.append(np.nan)
+            
+            # Plot
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=entropy_over_time,
+                mode='lines+markers',
+                name=f'{unit_to_track} Entropy',
+                line=dict(width=3, color='#667eea'),
+                marker=dict(size=8)
+            ))
+            
+            fig.update_layout(
+                title=f"{unit_to_track} Entropy Over Time",
+                xaxis_title="Year",
+                yaxis_title="Shannon Entropy (bits)",
+                template='plotly_white',
+                height=400,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.info("""
+            **Interpretation:**
+            - **Increasing entropy** → Growing diversity/internationalization
+            - **Decreasing entropy** → Increasing concentration
+            - **Stable entropy** → Consistent distribution pattern
+            """)
+    
+    # Comparative bar chart
+    if len(results) > 1:
+        st.markdown("---")
+        st.markdown("### 📊 Comparative Entropy")
         
-        st.info("""
-        **Interpretation:**
-        - **Increasing entropy** = Growing diversity/internationalization
-        - **Decreasing entropy** = Increasing concentration
-        - **Stable entropy** = Consistent distribution pattern
-        """)
+        results_df = pd.DataFrame(list(results.items()), columns=['Unit', 'Entropy'])
+        
+        fig = px.bar(
+            results_df,
+            x='Unit',
+            y='Entropy',
+            title="Entropy Comparison Across Units",
+            color='Entropy',
+            color_continuous_scale='Viridis'
+        )
+        
+        fig.update_layout(template='plotly_white', height=400)
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_divergence_analysis():
-    """KL Divergence and JS Distance analysis"""
+    """KL Divergence with unit selection"""
     
     st.subheader("📊 Divergence Analysis")
     st.markdown("""
-    **Kullback-Leibler (KL) Divergence** measures how one probability distribution 
-    differs from another reference distribution.
+    **Jensen-Shannon Distance** measures how different two probability distributions are.
     
-    **Jensen-Shannon Distance** is a symmetric version of KL divergence.
+    **Range:** [0, 1]
+    - **0** = Identical distributions
+    - **1** = Completely different distributions
     """)
     
     # Need both datasets
@@ -195,79 +305,137 @@ def render_divergence_analysis():
     
     st.markdown("---")
     
-    # Temporal divergence
-    st.markdown("### 📈 Temporal Distribution Divergence")
+    # Get available units for comparison
+    st.markdown("### 🎯 Select Comparison Unit")
     
-    if 'year' in pubs_df.columns and 'year' in pats_df.columns:
-        # Get common year range
-        all_years = sorted(set(pubs_df['year'].dropna()) | set(pats_df['year'].dropna()))
-        
-        pubs_temporal = pubs_df['year'].value_counts()
-        pats_temporal = pats_df['year'].value_counts()
-        
-        # Normalize to probability distributions
-        pubs_dist = pd.Series([pubs_temporal.get(y, 0) for y in all_years])
-        pats_dist = pd.Series([pats_temporal.get(y, 0) for y in all_years])
-        
-        pubs_dist = pubs_dist / pubs_dist.sum()
-        pats_dist = pats_dist / pats_dist.sum()
-        
-        # Calculate JS distance
-        js_distance = jensenshannon(pubs_dist, pats_dist)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.metric("Jensen-Shannon Distance", f"{js_distance:.4f}")
-        
-        with col2:
-            similarity = 1 - js_distance
-            st.metric("Distribution Similarity", f"{similarity:.2%}")
-        
-        # Visualization
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=all_years,
-            y=pubs_dist,
-            mode='lines+markers',
-            name='Publications',
-            line=dict(width=3, color='#3498db')
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=all_years,
-            y=pats_dist,
-            mode='lines+markers',
-            name='Patents',
-            line=dict(width=3, color='#e74c3c')
-        ))
-        
-        fig.update_layout(
-            title="Temporal Distribution Comparison",
-            xaxis_title="Year",
-            yaxis_title="Probability",
-            template='plotly_white',
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.info("""
-        **Interpretation:**
-        - **JS Distance = 0**: Identical distributions
-        - **JS Distance = 1**: Completely different distributions
-        - **Typical range**: 0.1-0.4 for related fields
-        """)
+    # Find common units
+    pubs_units = get_available_units(pubs_df, 'publications')
+    pats_units = get_available_units(pats_df, 'patents')
+    
+    # Common units that can be compared
+    comparable_units = {}
+    
+    # Temporal is always comparable
+    if 'Temporal' in pubs_units and 'Temporal' in pats_units:
+        comparable_units['Temporal Distribution'] = ('year', 'year')
+    
+    # Geographic comparison
+    if 'Geographic' in pubs_units and 'Geographic' in pats_units:
+        comparable_units['Geographic Distribution'] = ('country', 'jurisdiction')
+    
+    # Keywords/Technology
+    if 'Keywords' in pubs_units and 'Technology Classes' in pats_units:
+        comparable_units['Keywords vs Technology'] = (pubs_units['Keywords'], pats_units['Technology Classes'])
+    
+    if not comparable_units:
+        st.error("No comparable units found between publications and patents")
+        return
+    
+    comparison_type = st.selectbox("Select comparison", list(comparable_units.keys()))
+    
+    pubs_col, pats_col = comparable_units[comparison_type]
+    
+    st.markdown("---")
+    
+    if st.button("🔍 Calculate Divergence", type="primary"):
+        with st.spinner("Calculating divergence..."):
+            # Get distributions
+            if comparison_type in ['Keywords vs Technology']:
+                # Parse lists
+                pubs_items = []
+                for item_str in pubs_df[pubs_col].dropna():
+                    pubs_items.extend(parse_entity_list(item_str))
+                
+                pats_items = []
+                for item_str in pats_df[pats_col].dropna():
+                    pats_items.extend(parse_entity_list(item_str))
+                
+                # Get common vocabulary
+                all_items = set(pubs_items + pats_items)
+                
+                pubs_counts = Counter(pubs_items)
+                pats_counts = Counter(pats_items)
+                
+                # Create aligned distributions
+                pubs_dist = np.array([pubs_counts.get(item, 0) for item in all_items])
+                pats_dist = np.array([pats_counts.get(item, 0) for item in all_items])
+                
+            else:
+                # Direct distributions
+                if comparison_type == 'Temporal Distribution':
+                    all_values = sorted(set(pubs_df[pubs_col].dropna()) | set(pats_df[pats_col].dropna()))
+                else:
+                    all_values = sorted(set(pubs_df[pubs_col].dropna()) | set(pats_df[pats_col].dropna()))
+                
+                pubs_counts = pubs_df[pubs_col].value_counts()
+                pats_counts = pats_df[pats_col].value_counts()
+                
+                pubs_dist = np.array([pubs_counts.get(v, 0) for v in all_values])
+                pats_dist = np.array([pats_counts.get(v, 0) for v in all_values])
+            
+            # Normalize
+            pubs_dist = pubs_dist / pubs_dist.sum() if pubs_dist.sum() > 0 else pubs_dist
+            pats_dist = pats_dist / pats_dist.sum() if pats_dist.sum() > 0 else pats_dist
+            
+            # Calculate JS distance
+            js_distance = jensenshannon(pubs_dist, pats_dist)
+            
+            # Display result
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Jensen-Shannon Distance", f"{js_distance:.4f}")
+            
+            with col2:
+                similarity = 1 - js_distance
+                st.metric("Distribution Similarity", f"{similarity:.2%}")
+            
+            # Visualization
+            if comparison_type == 'Temporal Distribution':
+                st.markdown("### 📈 Distribution Comparison")
+                
+                fig = go.Figure()
+                
+                fig.add_trace(go.Scatter(
+                    x=all_values,
+                    y=pubs_dist,
+                    mode='lines+markers',
+                    name='Publications',
+                    line=dict(width=3, color='#3498db')
+                ))
+                
+                fig.add_trace(go.Scatter(
+                    x=all_values,
+                    y=pats_dist,
+                    mode='lines+markers',
+                    name='Patents',
+                    line=dict(width=3, color='#e74c3c')
+                ))
+                
+                fig.update_layout(
+                    title=f"{comparison_type} Comparison",
+                    xaxis_title=pubs_col.title(),
+                    yaxis_title="Probability",
+                    template='plotly_white',
+                    height=450,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            st.info(f"""
+            **Interpretation for {comparison_type}:**
+            - **JS Distance = {js_distance:.3f}**
+            - This indicates {"very similar" if js_distance < 0.2 else "moderately similar" if js_distance < 0.5 else "quite different"} distributions
+            - Typical range for related fields: 0.1-0.4
+            """)
 
 def render_trl_analysis():
-    """Technology Readiness Level analysis"""
+    """TRL analysis - keep as is from previous version"""
     
     st.subheader("🚀 Technology Readiness Level (TRL) Analysis")
     st.markdown("""
-    **Technology Readiness Level (TRL)** is a method for estimating technology maturity.
-    
-    **Scale:**
+    **TRL Scale:**
     - TRL 1-3: Basic research (publications dominant)
     - TRL 4-6: Technology development (mixed)
     - TRL 7-9: System deployment (patents dominant)
@@ -286,9 +454,7 @@ def render_trl_analysis():
     
     st.markdown("---")
     
-    # Calculate TRL proxy based on pub/patent ratio
-    st.markdown("### 📊 TRL Evolution Over Time")
-    
+    # Calculate TRL
     years = sorted(set(pubs_df['year'].dropna()) & set(pats_df['year'].dropna()))
     
     trl_data = []
@@ -301,13 +467,13 @@ def render_trl_analysis():
         if total > 0:
             patent_ratio = pat_count / total
             
-            # TRL estimation (simplified)
+            # TRL estimation
             if patent_ratio < 0.2:
-                trl = 1 + (patent_ratio / 0.2) * 2  # TRL 1-3
+                trl = 1 + (patent_ratio / 0.2) * 2
             elif patent_ratio < 0.5:
-                trl = 3 + ((patent_ratio - 0.2) / 0.3) * 3  # TRL 3-6
+                trl = 3 + ((patent_ratio - 0.2) / 0.3) * 3
             else:
-                trl = 6 + ((patent_ratio - 0.5) / 0.5) * 3  # TRL 6-9
+                trl = 6 + ((patent_ratio - 0.5) / 0.5) * 3
             
             trl_data.append({
                 'year': year,
@@ -332,7 +498,7 @@ def render_trl_analysis():
     ))
     
     # Add TRL zones
-    fig.add_hrect(y0=1, y1=3, fillcolor="lightblue", opacity=0.2, 
+    fig.add_hrect(y0=1, y1=3, fillcolor="lightblue", opacity=0.2,
                   annotation_text="Basic Research", annotation_position="right")
     fig.add_hrect(y0=3, y1=6, fillcolor="lightyellow", opacity=0.2,
                   annotation_text="Development", annotation_position="right")
@@ -369,16 +535,13 @@ def render_trl_analysis():
             st.metric("Patent Ratio", f"{latest_ratio:.1%}")
 
 def render_time_lag_analysis():
-    """Analyze time lag between publications and patents"""
+    """Time lag analysis - keep as is"""
     
     st.subheader("⏱️ Publication-Patent Time Lag Analysis")
-    st.markdown("""
-    **Time Lag Analysis** measures the time between scientific publication 
-    and patent filing, indicating technology transfer speed.
-    """)
+    st.markdown("Measures the time between scientific publication and patent filing")
     
     if st.session_state.publications_data is None or st.session_state.patents_data is None:
-        st.warning("⚠️ Both publications and patents data required")
+        st.warning("⚠️ Both datasets required")
         return
     
     pubs_df = st.session_state.publications_data
@@ -390,25 +553,18 @@ def render_time_lag_analysis():
     
     st.markdown("---")
     
-    # Calculate average time lag per year
-    st.markdown("### 📊 Average Time Lag Over Time")
-    
     pub_years = pubs_df.groupby('year').size().reset_index(name='pub_count')
     pat_years = pats_df.groupby('year').size().reset_index(name='pat_count')
     
     merged = pd.merge(pub_years, pat_years, on='year', how='outer').fillna(0)
-    
-    # Calculate cumulative lag
     merged['pub_cumsum'] = merged['pub_count'].cumsum()
     merged['pat_cumsum'] = merged['pat_count'].cumsum()
     
-    # Estimate lag (simplified method)
+    # Estimate lag
     lags = []
     for idx, row in merged.iterrows():
         if row['pat_count'] > 0 and idx > 0:
-            # Find when similar publication volume occurred
             pub_cumsum = row['pub_cumsum']
-            # Look back to find matching publication volume
             lag_years = 0
             for past_idx in range(idx-1, -1, -1):
                 if merged.iloc[past_idx]['pub_cumsum'] <= pub_cumsum * 0.9:
@@ -426,7 +582,6 @@ def render_time_lag_analysis():
         x=merged['year'],
         y=merged['estimated_lag'],
         mode='lines+markers',
-        name='Time Lag',
         line=dict(width=3, color='#9b59b6'),
         marker=dict(size=8)
     ))
@@ -441,7 +596,6 @@ def render_time_lag_analysis():
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Statistics
     valid_lags = merged['estimated_lag'].dropna()
     if len(valid_lags) > 0:
         col1, col2, col3 = st.columns(3)
@@ -456,25 +610,19 @@ def render_time_lag_analysis():
             st.metric("Min Lag", f"{valid_lags.min():.1f} years")
 
 def render_link_prediction():
-    """Link prediction analysis for collaboration/citation networks and keyword co-occurrences"""
+    """Link prediction with unit selection"""
     
     st.subheader("🔗 Link Prediction Analysis")
     st.markdown("""
-    **Link Prediction** identifies potential future connections based on network structure.
+    **Link Prediction** identifies potential future connections in networks.
     
     **Available Networks:**
-    - **Collaboration Networks**: Author/Inventor co-authorships
-    - **Keyword Networks**: Keyword co-occurrences
-    - **Hybrid Networks**: Combined collaboration + keyword patterns
+    - Entity collaboration networks (authors, inventors, organizations)
+    - Keyword/topic co-occurrence networks
+    - Hybrid networks
     """)
     
-    # Network type selection
-    network_type = st.radio(
-        "Select Network Type",
-        ["👥 Collaboration Network", "🏷️ Keyword Co-occurrence Network", "🔀 Hybrid Network"],
-        horizontal=True
-    )
-    
+    # Dataset selection
     dataset = st.radio("Select Dataset", ["Publications", "Patents"], horizontal=True)
     
     if dataset == "Publications":
@@ -482,466 +630,205 @@ def render_link_prediction():
             st.warning("⚠️ Upload publications data")
             return
         df = st.session_state.publications_data
-        entity_col = 'author'
-        keyword_col = 'keywords'
+        dataset_type = 'publications'
     else:
         if st.session_state.patents_data is None:
             st.warning("⚠️ Upload patents data")
             return
         df = st.session_state.patents_data
-        entity_col = 'inventor'
-        keyword_col = 'ipc_class'  # or could use abstract keywords
+        dataset_type = 'patents'
     
-    st.markdown("---")
+    # Get available units
+    available_units = get_available_units(df, dataset_type)
     
-    if network_type == "👥 Collaboration Network":
-        render_collaboration_network(df, entity_col, dataset)
+    # Filter to network-applicable units
+    network_units = {k: v for k, v in available_units.items() 
+                    if k in ['Authors', 'Inventors', 'Organizations', 'Keywords', 'Technology Classes']}
     
-    elif network_type == "🏷️ Keyword Co-occurrence Network":
-        render_keyword_network(df, keyword_col, dataset)
-    
-    elif network_type == "🔀 Hybrid Network":
-        render_hybrid_network(df, entity_col, keyword_col, dataset)
-
-def render_collaboration_network(df, entity_col, dataset):
-    """Collaboration network link prediction"""
-    
-    st.markdown("### 👥 Collaboration Network Analysis")
-    
-    if entity_col not in df.columns:
-        st.warning(f"{entity_col} data not available")
+    if not network_units:
+        st.error("No network-compatible units available")
         return
     
-    import networkx as nx
+    st.markdown("---")
     
-    # Build collaboration network
-    with st.spinner("Building collaboration network..."):
-        G = nx.Graph()
-        
-        for entities in df[entity_col].dropna():
-            entity_list = [e.strip() for e in str(entities).split(';') if e.strip()]
-            
-            # Add edges between all pairs
-            for i in range(len(entity_list)):
-                for j in range(i + 1, len(entity_list)):
-                    if G.has_edge(entity_list[i], entity_list[j]):
-                        G[entity_list[i]][entity_list[j]]['weight'] += 1
-                    else:
-                        G.add_edge(entity_list[i], entity_list[j], weight=1)
+    # Unit selection
+    st.markdown("### 🎯 Select Network Type")
     
-    st.success(f"✅ Network built: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+    selected_unit = st.selectbox(
+        "Choose entity/unit for network analysis",
+        list(network_units.keys())
+    )
     
-    # Network metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col_name = network_units[selected_unit]
+    
+    st.markdown("---")
+    
+    # Network construction parameters
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.metric("Total Nodes", G.number_of_nodes())
+        min_cooccurrence = st.slider(
+            "Minimum Co-occurrence",
+            1, 10, 2,
+            help="Minimum times entities must appear together"
+        )
     
     with col2:
-        st.metric("Total Edges", G.number_of_edges())
+        top_n_entities = st.slider(
+            "Top Entities to Include",
+            50, 500, 100,
+            help="Focus on most frequent entities"
+        )
     
-    with col3:
-        density = nx.density(G)
-        st.metric("Density", f"{density:.4f}")
-    
-    with col4:
-        if len(G) > 0:
-            avg_degree = sum(dict(G.degree()).values()) / len(G)
-            st.metric("Avg Degree", f"{avg_degree:.2f}")
-    
-    st.markdown("---")
-    
-    # Link prediction
-    st.markdown("### 🔮 Predicted Future Collaborations")
-    
-    method = st.selectbox(
-        "Prediction Method",
-        ["Common Neighbors", "Jaccard Coefficient", "Adamic-Adar Index", "Preferential Attachment"]
-    )
-    
-    top_n = st.slider("Number of Predictions", 10, 50, 20)
-    
-    with st.spinner(f"Calculating {method}..."):
-        if method == "Common Neighbors":
-            predictions = list(nx.common_neighbor_centrality(G))
-        elif method == "Jaccard Coefficient":
-            predictions = list(nx.jaccard_coefficient(G))
-        elif method == "Adamic-Adar Index":
-            predictions = list(nx.adamic_adar_index(G))
-        else:  # Preferential Attachment
-            predictions = list(nx.preferential_attachment(G))
-        
-        # Sort by score
-        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:top_n]
-    
-    # Display predictions
-    pred_df = pd.DataFrame(predictions, columns=['Entity 1', 'Entity 2', 'Score'])
-    pred_df['Score'] = pred_df['Score'].round(4)
-    
-    st.dataframe(pred_df, use_container_width=True, hide_index=True)
-    
-    # Visualization
-    st.markdown("---")
-    st.markdown("### 📊 Score Distribution")
-    
-    fig = px.histogram(
-        pred_df,
-        x='Score',
-        nbins=20,
-        title=f"Distribution of {method} Scores",
-        labels={'Score': 'Prediction Score', 'count': 'Frequency'}
-    )
-    
-    fig.update_layout(template='plotly_white', height=400)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Download predictions
-    csv = pred_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        "📥 Download Predictions",
-        csv,
-        f"collaboration_predictions_{dataset.lower()}.csv",
-        "text/csv"
-    )
-
-def render_keyword_network(df, keyword_col, dataset):
-    """Keyword co-occurrence network link prediction"""
-    
-    st.markdown("### 🏷️ Keyword Co-occurrence Network")
-    st.markdown("""
-    Analyzes which keywords frequently appear together and predicts future keyword associations.
-    Useful for identifying emerging research themes and topic convergence.
-    """)
-    
-    # Check for keywords
-    if keyword_col not in df.columns:
-        # Try alternative keyword columns
-        alt_cols = ['keywords', 'author_keywords', 'Keywords', 'abstract']
-        keyword_col = None
-        for col in alt_cols:
-            if col in df.columns:
-                keyword_col = col
-                break
-        
-        if keyword_col is None:
-            st.warning("No keyword data available. Extracting keywords from abstracts...")
+    if st.button("🚀 Build Network & Predict Links", type="primary"):
+        with st.spinner(f"Building {selected_unit} network..."):
+            # Build network
+            G = nx.Graph()
             
-            if 'abstract' in df.columns:
-                keyword_col = 'abstract'
-                df = extract_keywords_from_text(df, 'abstract')
-                keyword_col = 'extracted_keywords'
-            else:
-                st.error("No text data available for keyword extraction")
-                return
-    
-    st.info(f"Using column: **{keyword_col}**")
-    
-    # Build keyword co-occurrence network
-    with st.spinner("Building keyword network..."):
-        import networkx as nx
+            # Parse all entities
+            all_entities = []
+            entity_docs = []
+            
+            for entity_str in df[col_name].dropna():
+                entities = parse_entity_list(entity_str)
+                
+                if len(entities) > 0:
+                    all_entities.extend(entities)
+                    entity_docs.append(entities)
+            
+            # Get top entities
+            entity_freq = Counter(all_entities)
+            top_entity_list = [e for e, _ in entity_freq.most_common(top_n_entities)]
+            
+            # Build co-occurrence edges
+            for entities in entity_docs:
+                # Filter to top entities
+                entities = [e for e in entities if e in top_entity_list]
+                
+                # Add edges
+                for i in range(len(entities)):
+                    for j in range(i + 1, len(entities)):
+                        if G.has_edge(entities[i], entities[j]):
+                            G[entities[i]][entities[j]]['weight'] += 1
+                        else:
+                            G.add_edge(entities[i], entities[j], weight=1)
+            
+            # Filter by minimum co-occurrence
+            edges_to_remove = [(u, v) for u, v, d in G.edges(data=True)
+                              if d['weight'] < min_cooccurrence]
+            G.remove_edges_from(edges_to_remove)
+            
+            # Remove isolated nodes
+            G.remove_nodes_from(list(nx.isolates(G)))
         
-        G = nx.Graph()
+        st.success(f"✅ Network built: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
         
-        # Filter parameters
-        col1, col2 = st.columns(2)
+        # Network metrics
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            min_cooccurrence = st.slider("Minimum Co-occurrence", 1, 10, 2,
-                                        help="Minimum times keywords must appear together")
+            st.metric("Nodes", G.number_of_nodes())
         
         with col2:
-            top_keywords = st.slider("Top Keywords to Include", 50, 500, 100,
-                                    help="Focus on most frequent keywords")
+            st.metric("Edges", G.number_of_edges())
         
-        # Extract all keywords
-        all_keywords = []
-        keyword_docs = []
+        with col3:
+            density = nx.density(G)
+            st.metric("Density", f"{density:.4f}")
         
-        for keywords_str in df[keyword_col].dropna():
-            if pd.notna(keywords_str):
-                # Split by semicolon or comma
-                keywords = re.split(r'[;,]', str(keywords_str))
-                keywords = [k.strip().lower() for k in keywords if k.strip()]
-                
-                if len(keywords) > 0:
-                    all_keywords.extend(keywords)
-                    keyword_docs.append(keywords)
+        with col4:
+            if len(G) > 0:
+                components = nx.number_connected_components(G)
+                st.metric("Components", components)
         
-        # Get top keywords
-        keyword_freq = Counter(all_keywords)
-        top_keyword_list = [k for k, _ in keyword_freq.most_common(top_keywords)]
+        st.markdown("---")
         
-        # Build edges between keywords that co-occur
-        for keywords in keyword_docs:
-            # Filter to top keywords
-            keywords = [k for k in keywords if k in top_keyword_list]
-            
-            # Add edges
-            for i in range(len(keywords)):
-                for j in range(i + 1, len(keywords)):
-                    if G.has_edge(keywords[i], keywords[j]):
-                        G[keywords[i]][keywords[j]]['weight'] += 1
-                    else:
-                        G.add_edge(keywords[i], keywords[j], weight=1)
+        # Most central entities
+        st.markdown("### ⭐ Most Central Entities")
         
-        # Filter edges by minimum co-occurrence
-        edges_to_remove = [(u, v) for u, v, d in G.edges(data=True) 
-                          if d['weight'] < min_cooccurrence]
-        G.remove_edges_from(edges_to_remove)
-        
-        # Remove isolated nodes
-        G.remove_nodes_from(list(nx.isolates(G)))
-    
-    st.success(f"✅ Network built: {G.number_of_nodes()} keywords, {G.number_of_edges()} co-occurrences")
-    
-    # Network metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Unique Keywords", G.number_of_nodes())
-    
-    with col2:
-        st.metric("Co-occurrences", G.number_of_edges())
-    
-    with col3:
-        density = nx.density(G)
-        st.metric("Network Density", f"{density:.4f}")
-    
-    with col4:
         if len(G) > 0:
-            components = nx.number_connected_components(G)
-            st.metric("Topic Clusters", components)
-    
-    st.markdown("---")
-    
-    # Most central keywords
-    st.markdown("### ⭐ Most Central Keywords")
-    
-    if len(G) > 0:
-        degree_centrality = nx.degree_centrality(G)
-        betweenness = nx.betweenness_centrality(G)
+            degree_centrality = nx.degree_centrality(G)
+            betweenness = nx.betweenness_centrality(G)
+            
+            central_df = pd.DataFrame([
+                {
+                    'Entity': entity,
+                    'Degree Centrality': degree_centrality[entity],
+                    'Betweenness': betweenness[entity],
+                    'Connections': G.degree(entity)
+                }
+                for entity in sorted(degree_centrality, key=degree_centrality.get, reverse=True)[:20]
+            ])
+            
+            st.dataframe(central_df, use_container_width=True, hide_index=True)
         
-        central_keywords = pd.DataFrame([
-            {
-                'Keyword': keyword,
-                'Degree Centrality': degree_centrality[keyword],
-                'Betweenness': betweenness[keyword],
-                'Connections': G.degree(keyword)
-            }
-            for keyword in list(degree_centrality.keys())[:20]
-        ]).sort_values('Degree Centrality', ascending=False)
+        st.markdown("---")
         
-        st.dataframe(central_keywords, use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    
-    # Link prediction for keywords
-    st.markdown("### 🔮 Predicted Future Keyword Associations")
-    
-    method = st.selectbox(
-        "Prediction Method",
-        ["Common Neighbors", "Jaccard Coefficient", "Adamic-Adar Index", "Resource Allocation"]
-    )
-    
-    top_n = st.slider("Number of Predictions", 10, 50, 20)
-    
-    with st.spinner(f"Calculating {method}..."):
-        if method == "Common Neighbors":
-            predictions = list(nx.common_neighbor_centrality(G))
-        elif method == "Jaccard Coefficient":
-            predictions = list(nx.jaccard_coefficient(G))
-        elif method == "Adamic-Adar Index":
-            predictions = list(nx.adamic_adar_index(G))
-        else:  # Resource Allocation
-            predictions = list(nx.resource_allocation_index(G))
+        # Link prediction
+        st.markdown("### 🔮 Predicted Future Links")
         
-        # Sort by score
-        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:top_n]
-    
-    # Display predictions
-    pred_df = pd.DataFrame(predictions, columns=['Keyword 1', 'Keyword 2', 'Association Score'])
-    pred_df['Association Score'] = pred_df['Association Score'].round(4)
-    
-    st.dataframe(pred_df, use_container_width=True, hide_index=True)
-    
-    st.info("""
-    **Interpretation:**
-    - **High scores** = Keywords likely to co-occur in future research
-    - Identifies emerging research themes and topic convergence
-    - Useful for forecasting interdisciplinary connections
-    """)
-    
-    # Visualize top predictions
-    st.markdown("---")
-    st.markdown("### 📊 Top Predicted Associations")
-    
-    top_10 = pred_df.head(10).copy()
-    top_10['Pair'] = top_10['Keyword 1'] + ' ↔ ' + top_10['Keyword 2']
-    
-    fig = px.bar(
-        top_10,
-        x='Association Score',
-        y='Pair',
-        orientation='h',
-        title="Top 10 Predicted Keyword Associations",
-        color='Association Score',
-        color_continuous_scale='Viridis'
-    )
-    
-    fig.update_layout(
-        yaxis={'categoryorder': 'total ascending'},
-        template='plotly_white',
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Download predictions
-    csv = pred_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        "📥 Download Keyword Predictions",
-        csv,
-        f"keyword_predictions_{dataset.lower()}.csv",
-        "text/csv"
-    )
-
-def render_hybrid_network(df, entity_col, keyword_col, dataset):
-    """Hybrid network combining collaboration and keyword patterns"""
-    
-    st.markdown("### 🔀 Hybrid Network Analysis")
-    st.markdown("""
-    Combines **collaboration patterns** with **keyword co-occurrences** to predict:
-    - Researchers likely to collaborate based on shared research interests
-    - Keyword associations strengthened by author collaborations
-    """)
-    
-    if entity_col not in df.columns:
-        st.warning(f"{entity_col} data not available")
-        return
-    
-    import networkx as nx
-    
-    # Build bipartite network (authors-keywords)
-    with st.spinner("Building hybrid network..."):
-        B = nx.Graph()
+        method = st.selectbox(
+            "Prediction Method",
+            ["Common Neighbors", "Jaccard Coefficient", "Adamic-Adar Index", "Resource Allocation"]
+        )
         
-        # Add nodes with bipartite attribute
-        authors = set()
-        keywords = set()
+        top_n = st.slider("Number of Predictions", 10, 50, 20)
         
-        for idx, row in df.iterrows():
-            if pd.notna(row.get(entity_col)) and pd.notna(row.get(keyword_col)):
-                # Get authors
-                author_list = [a.strip() for a in str(row[entity_col]).split(';') if a.strip()]
-                
-                # Get keywords
-                keyword_list = re.split(r'[;,]', str(row[keyword_col]))
-                keyword_list = [k.strip().lower() for k in keyword_list if k.strip()]
-                
-                authors.update(author_list)
-                keywords.update(keyword_list[:5])  # Limit keywords per document
-                
-                # Add edges between authors and keywords
-                for author in author_list:
-                    for keyword in keyword_list[:5]:
-                        if B.has_edge(author, keyword):
-                            B[author][keyword]['weight'] += 1
-                        else:
-                            B.add_edge(author, keyword, weight=1)
+        with st.spinner(f"Calculating {method}..."):
+            if method == "Common Neighbors":
+                predictions = list(nx.common_neighbor_centrality(G))
+            elif method == "Jaccard Coefficient":
+                predictions = list(nx.jaccard_coefficient(G))
+            elif method == "Adamic-Adar Index":
+                predictions = list(nx.adamic_adar_index(G))
+            else:  # Resource Allocation
+                predictions = list(nx.resource_allocation_index(G))
+            
+            # Sort by score
+            predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:top_n]
         
-        # Set bipartite attribute
-        B.add_nodes_from(authors, bipartite=0)
-        B.add_nodes_from(keywords, bipartite=1)
-    
-    st.success(f"✅ Hybrid network: {len(authors)} authors, {len(keywords)} keywords, {B.number_of_edges()} connections")
-    
-    # Network metrics
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Authors", len(authors))
-    
-    with col2:
-        st.metric("Keywords", len(keywords))
-    
-    with col3:
-        st.metric("Connections", B.number_of_edges())
-    
-    st.markdown("---")
-    
-    # Project to author-author network based on shared keywords
-    st.markdown("### 👥 Author Collaboration Prediction (Based on Shared Keywords)")
-    
-    with st.spinner("Projecting to author network..."):
-        from networkx.algorithms import bipartite
+        # Display predictions
+        pred_df = pd.DataFrame(predictions, columns=['Entity 1', 'Entity 2', 'Link Score'])
+        pred_df['Link Score'] = pred_df['Link Score'].round(4)
         
-        # Project onto authors
-        author_nodes = {n for n, d in B.nodes(data=True) if d.get('bipartite') == 0}
-        G_authors = bipartite.weighted_projected_graph(B, author_nodes)
-    
-    st.info(f"Projected network: {G_authors.number_of_nodes()} authors, {G_authors.number_of_edges()} potential collaborations")
-    
-    # Calculate predictions
-    method = st.selectbox(
-        "Prediction Method",
-        ["Common Neighbors", "Adamic-Adar Index", "Resource Allocation"]
-    )
-    
-    with st.spinner(f"Calculating {method}..."):
-        if method == "Common Neighbors":
-            predictions = list(nx.common_neighbor_centrality(G_authors))
-        elif method == "Adamic-Adar Index":
-            predictions = list(nx.adamic_adar_index(G_authors))
-        else:  # Resource Allocation
-            predictions = list(nx.resource_allocation_index(G_authors))
+        st.dataframe(pred_df, use_container_width=True, hide_index=True)
         
-        predictions = sorted(predictions, key=lambda x: x[2], reverse=True)[:20]
-    
-    # Display predictions
-    pred_df = pd.DataFrame(predictions, columns=['Author 1', 'Author 2', 'Score'])
-    pred_df['Score'] = pred_df['Score'].round(4)
-    
-    st.dataframe(pred_df, use_container_width=True, hide_index=True)
-    
-    st.success("""
-    ✅ **Hybrid Prediction Advantage:**
-    - Identifies collaborations based on **shared research interests**
-    - More accurate than structure-only predictions
-    - Reveals interdisciplinary research opportunities
-    """)
-
-def extract_keywords_from_text(df, text_col, n_keywords=5):
-    """Extract keywords from text using TF-IDF"""
-    
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    import re
-    
-    # Get texts
-    texts = df[text_col].dropna().astype(str).tolist()
-    
-    # TF-IDF
-    vectorizer = TfidfVectorizer(
-        max_features=100,
-        stop_words='english',
-        ngram_range=(1, 2),
-        min_df=2
-    )
-    
-    try:
-        tfidf_matrix = vectorizer.fit_transform(texts)
-        feature_names = vectorizer.get_feature_names_out()
+        # Visualization
+        st.markdown("### 📊 Top Predicted Links")
         
-        # Extract top keywords per document
-        keywords_list = []
-        for doc_idx in range(len(texts)):
-            doc_tfidf = tfidf_matrix[doc_idx].toarray()[0]
-            top_indices = doc_tfidf.argsort()[-n_keywords:][::-1]
-            keywords = [feature_names[i] for i in top_indices if doc_tfidf[i] > 0]
-            keywords_list.append('; '.join(keywords))
+        top_10 = pred_df.head(10).copy()
+        top_10['Pair'] = top_10['Entity 1'] + ' ↔ ' + top_10['Entity 2']
         
-        df['extracted_keywords'] = keywords_list
+        fig = px.bar(
+            top_10,
+            x='Link Score',
+            y='Pair',
+            orientation='h',
+            title=f"Top 10 Predicted {selected_unit} Links",
+            color='Link Score',
+            color_continuous_scale='Viridis'
+        )
         
-    except:
-        df['extracted_keywords'] = ''
-    
-    return df
+        fig.update_layout(
+            yaxis={'categoryorder': 'total ascending'},
+            template='plotly_white',
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.info(f"""
+        **Interpretation for {selected_unit}:**
+        - **Higher scores** = More likely future connections
+        - These predictions are based on current network structure
+        - Consider domain expertise when evaluating predictions
+        """)
+        
+        # Download
+        csv = pred_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download Predictions",
+            csv,
+            f"link_predictions_{selected_unit.lower()}_{dataset.lower()}.csv",
+            "text/csv"
+        )
