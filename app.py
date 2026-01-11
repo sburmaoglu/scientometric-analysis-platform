@@ -43,19 +43,30 @@ def main():
         
         # Navigation menu
         page = st.radio(
-            "Select Page",
-            [
-                "🏠 Home",
-                "📤 Data Upload",
-                "📚 Publications Analysis",
-                "💡 Patents Analysis",
-                "🔄 Comparative Analysis",
-                "📈 Temporal Analysis",
-                "🗺️ Geographic Analysis"
-            ],
-            label_visibility="collapsed"
-        )
-        
+   		 "Select Page",
+  		  [
+       			 "🏠 Home",
+      			  "📤 Data Upload",
+     			   "📚 Publications Analysis",
+     			   "💡 Patents Analysis",
+     			   "🔄 Comparative Analysis",
+     			   "📈 Temporal Analysis",
+     			   "🗺️ Geographic Analysis",
+     			   "🔬 Advanced Analytics",      # NEW
+     			   "🏷️ Topic Modeling"           # NEW
+   		 ],
+    		label_visibility="collapsed"
+	)
+
+# In the routing section, add:
+elif page == "🔬 Advanced Analytics":
+    import pages.advanced_analytics as advanced_analytics
+    advanced_analytics.render()
+
+elif page == "🏷️ Topic Modeling":
+    import pages.topic_modeling as topic_modeling
+    topic_modeling.render()
+
         st.markdown("---")
         st.markdown("### 📊 Data Status")
         
