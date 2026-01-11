@@ -1,4 +1,4 @@
-# 🔬 ScientoMetrics - Advanced Scientometric Analysis Platform
+# 🔬 ScientoMetrics - Advanced Scientometric Analysis Platform for Technology Foresight
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org)
